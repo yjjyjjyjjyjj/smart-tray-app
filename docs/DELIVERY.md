@@ -4,32 +4,32 @@
 
 현관의 트레이 2칸과 접이식 우산 공간 1칸에서 소지품·우산 유무를 감지하고, 문이 열리면 남은 물건을 Android 앱의 로컬 알림으로 안내하는 IoT 프로젝트입니다. 하드웨어·Arduino 펌웨어는 다른 팀원이 담당합니다. 현재 결과물은 공통 웹 UI를 포함한 Capacitor Android 앱과 브라우저 목업입니다. Kotlin Bluetooth Classic 서비스·권한·시스템 알림 기반을 구현했으며 실제 센서 디코더·장치 제어는 펌웨어 분석 후 연결합니다. 자체 서버는 사용하지 않으며 날씨 조회는 기상청 단기예보조회(getVilageFcst)를 사용합니다. 메이커톤 예산 내에서 자외선(UV) 모듈을 확보하지 못해, 시제품에서는 보라색 LED로 살균 동작을 시연합니다.
 
-## 생성 파일과 절대 경로
+## 생성 파일과 경로
 
-| 파일 | 절대 경로 |
+| 파일 | 저장소 파일 |
 | --- | --- |
-| 전체 프로젝트 README | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/README.md` |
-| 앱 진입점 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/index.html` |
-| 디자인 시스템·반응형 UI | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/css/style.css` |
-| 화면·사용자 입력 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/js/app.js` |
-| 데이터·설정·알림 조건 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/js/mock-data.js` |
-| 가상 통신·센서 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/js/mock-transport.js` |
-| 브랜드 아이콘 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/assets/icons/favicon.svg` |
-| 트레이 일러스트 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/assets/images/smart-tray.svg` |
-| 화면 명세 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/docs/SCREEN_SPEC.md` |
-| 앱 구조 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/docs/APP_ARCHITECTURE.md` |
-| 펌웨어 분석 체크리스트 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/docs/HC06_INTEGRATION_NOTES.md` |
-| 검증 결과 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/docs/VALIDATION.md` |
-| 이 제작 결과 보고서 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/docs/DELIVERY.md` |
-| 도메인 시나리오 테스트 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/tests/scenarios.test.cjs` |
-| UI 흐름 검증 함수 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/tests/browser-flow.cjs` |
-| 개발 산출물 제외 설정 | `/Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project/.gitignore` |
+| 전체 프로젝트 README | [README.md](../README.md) |
+| 앱 진입점 | [index.html](../index.html) |
+| 디자인 시스템·반응형 UI | [css/style.css](../css/style.css) |
+| 화면·사용자 입력 | [js/app.js](../js/app.js) |
+| 데이터·설정·알림 조건 | [js/mock-data.js](../js/mock-data.js) |
+| 가상 통신·센서 | [js/mock-transport.js](../js/mock-transport.js) |
+| 브랜드 아이콘 | [assets/icons/favicon.svg](../assets/icons/favicon.svg) |
+| 트레이 일러스트 | [assets/images/smart-tray.svg](../assets/images/smart-tray.svg) |
+| 화면 명세 | [docs/SCREEN_SPEC.md](../docs/SCREEN_SPEC.md) |
+| 앱 구조 | [docs/APP_ARCHITECTURE.md](../docs/APP_ARCHITECTURE.md) |
+| 펌웨어 분석 체크리스트 | [docs/HC06_INTEGRATION_NOTES.md](../docs/HC06_INTEGRATION_NOTES.md) |
+| 검증 결과 | [docs/VALIDATION.md](../docs/VALIDATION.md) |
+| 이 제작 결과 보고서 | [docs/DELIVERY.md](../docs/DELIVERY.md) |
+| 도메인 시나리오 테스트 | [tests/scenarios.test.cjs](../tests/scenarios.test.cjs) |
+| UI 흐름 검증 함수 | [tests/browser-flow.cjs](../tests/browser-flow.cjs) |
+| 개발 산출물 제외 설정 | [.gitignore](../.gitignore) |
 
-검증 도구의 캡처·로그는 Git 제외 대상인 `project/.playwright-mcp/`에 있습니다. 앱 실행에는 필요하지 않습니다.
+검증 도구의 캡처·로그는 Git 제외 대상인 `.playwright-mcp/`에 있습니다. 앱 실행에는 필요하지 않습니다.
 
 ## README 작성 결과
 
-요청하신 상위 `smart-tray/README.md`에 한국어로 작성했습니다. 전체 프로젝트 배경·목적·기능·하드웨어·역할 분리·트레이 2칸·우산 1칸 구조·HC-06 통신 구현·프로토콜 미확정·로컬 알림·살균 시제품 구성·화면·목업 범위·디렉터리·실행·Android 개발 계획·미확정 기술 사항을 포함합니다. `project/README.md`는 만들지 않았습니다.
+[프로젝트 루트의 README.md](../README.md)에 한국어로 정리했습니다. 전체 프로젝트 배경·목적·기능·하드웨어·역할 분리·트레이 2칸·우산 1칸 구조·HC-06 통신 구현·프로토콜 미확정·로컬 알림·살균 시제품 구성·화면·목업 범위·디렉터리·실행·Android 개발 계획·미확정 기술 사항을 포함합니다. 2026년 11월 1일 상위 폴더에서 저장소 루트로 이동하여 소스와 함께 관리합니다.
 
 ## 앱 화면
 
@@ -42,7 +42,7 @@ Bluetooth 연결·위치 설정, 홈, 트레이 관리, 트레이 상세·LED·�
 빌드·패키지 설치 없이 `index.html`을 일반 브라우저로 열거나, 권장되는 로컬 HTTP 방식으로 실행합니다.
 
 ```sh
-cd /Users/jeon-yeongjun/Desktop/gcu/makeathon/smart-tray/project
+# README.md가 있는 저장소 루트에서 실행
 python3 -m http.server 4173 --bind 127.0.0.1
 ```
 

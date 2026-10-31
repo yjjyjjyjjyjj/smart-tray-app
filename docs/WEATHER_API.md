@@ -6,7 +6,7 @@ Android의 실제 날씨 공급자는 **기상청 API 허브 `getVilageFcst`**�
 
 1. [기상청 API 허브](https://apihub.kma.go.kr/apiList.do?seqApi=10)에서 **예특보 → 4.3 단기예보조회**를 활용 신청합니다. `getUltraSrtNcst`는 현재 실황 API이므로 이 신청을 대신하지 않습니다.
 2. `android/weather.local.properties.example`을 `android/weather.local.properties`로 복사하고 `KMA_API_KEY`에 API 허브 인증키를 입력합니다. 이 로컬 파일은 Git 제외 대상입니다. CI에서는 같은 이름의 환경 변수를 사용할 수 있습니다(환경 변수 우선).
-3. `npm run sync:android` 후 Android Studio에서 `project/android`를 열어 다시 빌드·실행합니다. 키가 없어도 빌드되지만 실제 조회 시 설정 필요 안내가 표시됩니다.
+3. `npm run sync:android` 후 Android Studio에서 저장소 루트의 `android/`를 열어 다시 빌드·실행합니다. 키가 없어도 빌드되지만 실제 조회 시 설정 필요 안내가 표시됩니다.
 
 이 작업 환경에는 발급받은 키를 권한 0600의 로컬 파일로 설정했습니다. 키 값을 문서·저장소·웹 번들·로그에 기록하지 않습니다. 네이티브 `BuildConfig`에 포함되므로 **배포 APK에서 키를 추출할 가능성은 있습니다**. 현재는 메이커톤 시제품의 직접 호출 구조이며, 공개 배포 전 키 노출·호출 한도 관리 방식을 검토해야 합니다. 자체 서버는 추가하지 않았습니다.
 
