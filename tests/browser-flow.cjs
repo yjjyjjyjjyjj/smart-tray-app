@@ -12,13 +12,13 @@ module.exports = async function browserFlow(page) {
   ok(await page.getByRole('dialog').count() === 0, '최초 실행은 인트로 없이 설정 화면');
   ok(await page.getByRole('heading', { name: '위치로 비 예보 확인' }).count() === 1, 'Bluetooth와 위치 설정을 한 화면에 표시');
   await page.getByRole('button', { name: '주변 장치 찾기', exact: true }).click();
-  await page.getByRole('button', { name: /아마따 · 현관 가상 장치/ }).waitFor();
+  await page.getByRole('button', { name: /AMATTA\s*가상 장치/ }).waitFor();
   await page.locator('#fail-next-connection').check();
-  await page.getByRole('button', { name: /아마따 · 현관 가상 장치/ }).click();
+  await page.getByRole('button', { name: /AMATTA\s*가상 장치/ }).click();
   await page.getByRole('alert').waitFor();
   ok((await page.getByRole('alert').innerText()).includes('연결하지 못했어요'), '연결 실패와 재시도 안내');
   await page.locator('#fail-next-connection').uncheck();
-  await page.getByRole('button', { name: /아마따 · 현관 가상 장치/ }).click();
+  await page.getByRole('button', { name: /AMATTA\s*가상 장치/ }).click();
   await page.getByRole('button', { name: '설정 마치고 시작하기' }).waitFor();
   ok(new URL(page.url()).hash === '#connect', 'Bluetooth 연결 후 위치 설정 화면 유지');
   await page.getByRole('button', { name: '가상 날씨로 확인하기' }).click();

@@ -89,7 +89,7 @@ img { max-width: 100%; height: auto; display: block; }
 .icon-button.small .icon { width: 16px; height: 16px; }
 .notification-button { position: relative; width: 32px; min-width: 32px; }
 .notification-button .icon { width: 19px; height: 19px; }
-.unread-dot { position: absolute; width: 5px; height: 5px; background: #bd9763; border-radius: 50%; right: 8px; top: 9px; border: 1px solid white; }
+.unread-dot { position: absolute; width: 10px; height: 10px; background: #d64545; border-radius: 50%; right: 6px; top: 6px; border: 2px solid white; pointer-events: none; }
 .avatar { display: grid; place-items: center; background: #e9eee2; color: var(--text-secondary); font-size: 10px; font-weight: 700; width: 31px; height: 31px; border-radius: 50%; }
 .mobile-brand { display: none; }
 main { max-width: 1540px; margin: 0 auto; padding: 36px 43px 22px; outline: 0; }

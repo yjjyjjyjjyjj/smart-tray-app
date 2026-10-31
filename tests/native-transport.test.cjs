@@ -257,3 +257,41 @@ test('Umbrella sterilization settings persist through Kotlin without inventing a
   assert.deepEqual(calls,['save']); assert.equal(store.get().umbrella.effectUntil,0);
   transport.dispose();
 });
+
+test('Native region updates preserve forecasts and clear the previous location name', async () => {
+  const { transport, store, state, listeners, snapshot } = setup(); await transport.initialize();
+  state.weather = { status: 'ready', source: '기상청', regionName: '경기도 성남시 수정구', regionStatus: 'ready', windows: [{ start: 1, end: 2 }] };
+  listeners.stateChanged(snapshot());
+  assert.equal(store.get().weather.regionName, '경기도 성남시 수정구');
+  state.weather = { status: 'loading', regionName: null, regionStatus: 'loading', windows: [] };
+  listeners.stateChanged(snapshot());
+  assert.equal(store.get().weather.regionName, null);
+  state.weather = { status: 'ready', regionName: null, regionStatus: 'unavailable', windows: [{ start: 3, end: 4 }] };
+  listeners.stateChanged(snapshot());
+  assert.equal(store.get().weather.status, 'ready');
+  assert.deepEqual(store.get().weather.windows, [{ start: 3, end: 4 }]);
+  transport.dispose();
+});
+
+test('Native disconnect failure leaves connection state intact and supports retry', async () => {
+  const { store, transport, state, calls, plugin } = setup();
+  state.connection = 'connected'; await transport.initialize();
+  const disconnect = plugin.disconnect;
+  plugin.disconnect = async () => { calls.push('disconnect-failed'); throw Error('연결 해제 실패'); };
+  assert.equal(await transport.disconnect(), false);
+  assert.equal(store.get().connection, 'connected');
+  assert.equal(store.get().connectionError, '연결 해제 실패');
+  plugin.disconnect = disconnect;
+  assert.deepEqual(await transport.disconnect(), { stopped: true });
+  assert.equal(store.get().connection, 'disconnected');
+  assert.deepEqual(calls, ['disconnect-failed', 'disconnect']);
+  transport.dispose();
+});
+test('Native tray sterilization never sends an unimplemented command', async () => {
+  const { store, transport, calls } = setup(); await transport.initialize();
+  for (const enabled of [false, true]) {
+    store.update(s => { s.preferences.trays[0].effect.enabled = enabled; });
+    assert.equal(await transport.playEffect(1), false);
+  }
+  assert.deepEqual(calls, []); transport.dispose();
+});

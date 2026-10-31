@@ -130,7 +130,7 @@ object TrayRepository {
         .put("notifications", JSONObject().put("enabled", true).put("door", true).put("belongings", true)
             .put("doorLeftOpen", true).put("doorOpenSeconds", 30).put("umbrella", true))
         .put("umbrella", JSONObject().put("fan", JSONObject().put("duration", 0))
-            .put("effect", JSONObject().put("enabled", false).put("onDetect", false).put("onDoor", false).put("duration", 0)))
+            .put("effect", JSONObject().put("enabled", false).put("onDetect", false).put("onDoor", false).put("duration", 10)))
         .put("trays", JSONArray(TRAY_IDS.map { id -> JSONObject().put("id", id).put("alias", "${id}번 트레이").put("notification", true)
             .put("led", JSONObject().put("enabled", true).put("onDetect", true).put("onDoor", true))
             .put("effect", JSONObject().put("enabled", false).put("onDetect", false).put("onDoor", false).put("duration", 10)) }))
@@ -147,11 +147,11 @@ object TrayRepository {
             if (value is Boolean) effect.put(key, value)
         }
         val duration = savedEffect?.opt("duration")
-        if (duration is Number && duration.toDouble() in listOf(0.0, 15.0, 30.0, 60.0)) effect.put("duration", duration.toInt())
-        if (effect.getInt("duration") == 0) effect.put("enabled", false)
+        if (duration is Number && duration.toDouble() in listOf(5.0, 10.0, 20.0, 30.0)) effect.put("duration", duration.toInt())
+        else effect.put("enabled", false) // Unsupported saved times reset to 10 seconds, OFF.
         val notifications = result.getJSONObject("notifications")
         for (key in listOf("enabled", "door", "belongings", "doorLeftOpen", "umbrella")) notifications.put(key, input.optJSONObject("notifications")?.optBoolean(key, true) ?: true)
-        notifications.put("doorOpenSeconds", (input.optJSONObject("notifications")?.optInt("doorOpenSeconds", 30) ?: 30).coerceIn(1, DOOR_OPEN_MAX_SECONDS))
+        notifications.put("doorOpenSeconds", (input.optJSONObject("notifications")?.optInt("doorOpenSeconds", 30) ?: 30).coerceIn(DOOR_OPEN_MIN_SECONDS, DOOR_OPEN_MAX_SECONDS))
         for (i in TRAY_IDS.indices) {
             val previous = input.optJSONArray("trays")?.optJSONObject(i) ?: continue
             val tray = result.getJSONArray("trays").getJSONObject(i)

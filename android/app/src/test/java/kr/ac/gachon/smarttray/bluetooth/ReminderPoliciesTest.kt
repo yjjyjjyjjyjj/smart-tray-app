@@ -55,10 +55,11 @@ class ReminderPoliciesTest {
         assertEquals(100000L, p.openedAt)
         assertEquals("현관문이 계속 열려 있어요", p.evaluate("open", true, true, 30, 130000)?.title)
     }
-    @Test fun durationIsBoundedToOneThroughThreeHundredSecondsAndManualResetCancels() {
-        for ((input, seconds) in listOf(0 to 1, 1 to 1, 300 to 300, 600 to 300)) {
+    @Test fun durationIsBoundedToTenThroughThreeHundredSecondsAndManualResetCancels() {
+        for ((input, seconds) in listOf(-1 to 10, 0 to 10, 1 to 10, 9 to 10, 10 to 10, 300 to 300, 301 to 300, 600 to 300)) {
             val p = DoorLeftOpenPolicy()
             p.evaluate("open", true, true, input, 0)
+            assertEquals(seconds * 1000L, p.remaining(input, 0))
             assertNull(p.evaluate("unknown", false, true, input, seconds * 1000L - 1))
             assertNotNull(p.evaluate("unknown", false, true, input, seconds * 1000L))
         }
@@ -83,10 +84,21 @@ class ReminderPoliciesTest {
         assertEquals("현관 왼쪽", next.getJSONArray("trays").getJSONObject(0).getString("alias"))
         assertEquals(30, TrayRepository.sanitize(org.json.JSONObject()).getJSONObject("notifications").getInt("doorOpenSeconds"))
     }
+    @Test fun storedShortDoorSettingMigratesToTenSecondsWithoutLosingOtherPreferences() {
+        for (seconds in listOf(-1, 0, 1, 9, 10)) {
+            val previous = org.json.JSONObject().put("notifications", org.json.JSONObject()
+                .put("doorOpenSeconds", seconds).put("umbrella", false))
+                .put("trays", org.json.JSONArray().put(org.json.JSONObject().put("alias", "현관 왼쪽")))
+            val next = TrayRepository.sanitize(previous)
+            assertEquals(10, next.getJSONObject("notifications").getInt("doorOpenSeconds"))
+            assertFalse(next.getJSONObject("notifications").getBoolean("umbrella"))
+            assertEquals("현관 왼쪽", next.getJSONArray("trays").getJSONObject(0).getString("alias"))
+        }
+    }
     @Test fun changingThresholdKeepsOriginalOpenTimeAndDisabledNeverPosts() {
         val p = DoorLeftOpenPolicy(); p.evaluate("open", true, true, 60, 0)
-        assertNull(p.evaluate("open", true, false, 5, 6000))
-        assertNotNull(p.evaluate("open", true, true, 5, 6000))
+        assertNull(p.evaluate("open", true, false, 10, 10000))
+        assertNotNull(p.evaluate("open", true, true, 10, 10000))
     }
     @Test fun rainWindowsMergeOnlyRemainingHoursOfLocalToday() {
         assertEquals("10:00~12:00, 16:00~17:00", forecast().label(now))

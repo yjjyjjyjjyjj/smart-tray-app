@@ -1,10 +1,10 @@
 (function (root) {
   'use strict';
-  const CONFIG = Object.freeze({ appName: '아마따', storageKey: 'smart-tray.preferences.v1', activityStorageKey: 'smart-tray.activities.v1', activityLimit: 200, staleAfterMs: 45000, deviceName: '아마따 · 현관', version: '0.2.0', trayIds: Object.freeze([1, 2]), fanDurations: Object.freeze([0, 15, 30, 60]), effectDurations: Object.freeze([5, 10, 20, 30]), umbrellaEffectDurations: Object.freeze([0, 15, 30, 60]) });
+  const CONFIG = Object.freeze({ appName: '아마따', storageKey: 'smart-tray.preferences.v1', activityStorageKey: 'smart-tray.activities.v1', activityLimit: 200, staleAfterMs: 45000, deviceName: '아마따 · 현관', version: '0.2.0', trayIds: Object.freeze([1, 2]), fanDurations: Object.freeze([0, 15, 30, 60]), effectDurations: Object.freeze([5, 10, 20, 30]), umbrellaEffectDurations: Object.freeze([5, 10, 20, 30]) });
   const defaults = () => ({
     schemaVersion: 2,
     setupDone: false,
-    umbrella: { fan: { duration: 0 }, effect: { enabled: false, onDetect: false, onDoor: false, duration: 0 } },
+    umbrella: { fan: { duration: 0 }, effect: { enabled: false, onDetect: false, onDoor: false, duration: 10 } },
     notifications: { enabled: true, door: true, belongings: true, doorLeftOpen: true, doorOpenSeconds: 30, umbrella: true },
     trays: CONFIG.trayIds.map(id => ({
       id, alias: `${id}번 트레이`, notification: true,
@@ -20,13 +20,13 @@
       value.setupDone = saved.setupDone === true;
       if (CONFIG.fanDurations.includes(saved.umbrella?.fan?.duration)) value.umbrella.fan.duration = saved.umbrella.fan.duration;
       for (const key of ['enabled', 'door', 'belongings', 'doorLeftOpen', 'umbrella']) if (typeof saved.notifications?.[key] === 'boolean') value.notifications[key] = saved.notifications[key];
-      if (Number.isInteger(saved.notifications?.doorOpenSeconds)) value.notifications.doorOpenSeconds = Math.max(1, Math.min(300, saved.notifications.doorOpenSeconds));
+      if (Number.isInteger(saved.notifications?.doorOpenSeconds)) value.notifications.doorOpenSeconds = Math.max(10, Math.min(300, saved.notifications.doorOpenSeconds));
       const umbrellaEffect = saved.umbrella?.effect;
       for (const key of ['enabled', 'onDetect', 'onDoor']) {
         if (typeof umbrellaEffect?.[key] === 'boolean') value.umbrella.effect[key] = umbrellaEffect[key];
       }
       if (CONFIG.umbrellaEffectDurations.includes(umbrellaEffect?.duration)) value.umbrella.effect.duration = umbrellaEffect.duration;
-      if (value.umbrella.effect.duration === 0) value.umbrella.effect.enabled = false;
+      else value.umbrella.effect.enabled = false; // Unsupported saved times reset to 10 seconds, OFF.
       value.trays.forEach((tray, i) => {
         const previous = saved.trays?.[i];
         if (!previous) return;
@@ -106,7 +106,7 @@
   }
   function doorLeftOpenNotification(state, now = Date.now()) {
     const settings = state.preferences.notifications;
-    const seconds = Math.max(1, Math.min(300, settings.doorOpenSeconds));
+    const seconds = Math.max(10, Math.min(300, settings.doorOpenSeconds));
     const fresh = isFresh(state, now);
     if (!settings.enabled || !settings.doorLeftOpen || (fresh && state.door === 'closed') || state.doorOpenedAt == null || state.doorLeftOpenNotified || now - state.doorOpenedAt < seconds * 1000) return null;
     const confirmedOpen = fresh && state.door === 'open';

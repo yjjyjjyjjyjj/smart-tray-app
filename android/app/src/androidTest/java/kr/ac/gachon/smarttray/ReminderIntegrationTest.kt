@@ -34,14 +34,14 @@ class ReminderIntegrationTest {
         try {
             i.runOnMainSync {
                 val preferences = JSONObject(saved.toString())
-                preferences.getJSONObject("notifications").put("enabled", true).put("door", false).put("belongings", false).put("umbrella", true).put("doorLeftOpen", true).put("doorOpenSeconds", 1)
+                preferences.getJSONObject("notifications").put("enabled", true).put("door", false).put("belongings", false).put("umbrella", true).put("doorLeftOpen", true).put("doorOpenSeconds", 10)
                 TrayRepository.savePreferences(preferences)
                 TrayRepository.connection("connected")
                 val trays = TRAY_IDS.map { TrayReading(it, false, 0.0) }
                 TrayRepository.accept(DeviceReading("closed", trays, UmbrellaReading(true)))
                 TrayRepository.accept(DeviceReading("open", trays, UmbrellaReading(true)))
             }
-            val deadline = SystemClock.elapsedRealtime() + 5000
+            val deadline = SystemClock.elapsedRealtime() + 15000
             while (manager.activeNotifications.none { it.notification.extras.getCharSequence("android.title").toString() == "현관문이 계속 열려 있어요" } && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
             assertEquals(1, manager.activeNotifications.count { it.notification.extras.getCharSequence("android.title").toString() == "현관문이 계속 열려 있어요" })
             assertFalse(manager.activeNotifications.any { it.notification.extras.getCharSequence("android.title").toString() == "오늘은 우산도 챙겨요" }) // no verified forecast
@@ -52,9 +52,9 @@ class ReminderIntegrationTest {
                 TrayRepository.accept(DeviceReading("open", trays, UmbrellaReading(true)))
                 TrayRepository.accept(DeviceReading("closed", trays, UmbrellaReading(true)))
             }
-            Thread.sleep(1400)
+            Thread.sleep(10400)
             assertEquals(0, manager.activeNotifications.count { it.notification.extras.getCharSequence("android.title").toString() == "현관문이 계속 열려 있어요" })
-            assertEquals(1, TrayRepository.snapshot().getJSONObject("preferences").getJSONObject("notifications").getInt("doorOpenSeconds"))
+            assertEquals(10, TrayRepository.snapshot().getJSONObject("preferences").getJSONObject("notifications").getInt("doorOpenSeconds"))
         } finally {
             i.runOnMainSync { TrayRepository.connection("disconnected"); TrayRepository.savePreferences(saved) }
             context.unbindService(connection); manager.cancelAll()
@@ -81,7 +81,7 @@ class ReminderIntegrationTest {
             i.runOnMainSync {
                 val prefs = JSONObject(saved.toString())
                 prefs.getJSONObject("notifications").put("enabled", true).put("door", false)
-                    .put("belongings", false).put("umbrella", false).put("doorLeftOpen", true).put("doorOpenSeconds", 1)
+                    .put("belongings", false).put("umbrella", false).put("doorLeftOpen", true).put("doorOpenSeconds", 10)
                 TrayRepository.savePreferences(prefs)
             }
             block(service, manager)
@@ -93,14 +93,14 @@ class ReminderIntegrationTest {
     private fun reading(door: String) = DeviceReading(door, TRAY_IDS.map { TrayReading(it, false, 0.0) }, UmbrellaReading(false))
     private fun reminderCount(manager: NotificationManager) = manager.activeNotifications.count { it.notification.channelId == TrayNotifications.ALERTS }
     private fun awaitReminder(manager: NotificationManager) {
-        val deadline = SystemClock.elapsedRealtime() + 5000
+        val deadline = SystemClock.elapsedRealtime() + 15000
         while (reminderCount(manager) == 0 && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
         assertEquals(1, reminderCount(manager))
     }
     @Test fun lostConnectionKeepsNativeTimerReconnectCloseCancelsAndManualStopCancels() = withDoorService { service, manager ->
         val i = InstrumentationRegistry.getInstrumentation()
         i.runOnMainSync { TrayRepository.connection("disconnected") }
-        Thread.sleep(1200); assertEquals(0, reminderCount(manager)) // No observed opening.
+        Thread.sleep(10400); assertEquals(0, reminderCount(manager)) // No observed opening.
         i.runOnMainSync {
             TrayRepository.connection("connected")
             TrayRepository.accept(reading("closed")); TrayRepository.accept(reading("open"))
@@ -109,21 +109,21 @@ class ReminderIntegrationTest {
         awaitReminder(manager)
         val reminder = manager.activeNotifications.single { it.notification.channelId == TrayNotifications.ALERTS }
         assertEquals("현관문이 닫혔는지 확인해 주세요", reminder.notification.extras.getCharSequence("android.title").toString())
-        assertTrue(reminder.notification.extras.getCharSequence("android.text").toString().contains("1초 동안 닫힘 신호"))
+        assertTrue(reminder.notification.extras.getCharSequence("android.text").toString().contains("10초 동안 닫힘 신호"))
         i.runOnMainSync { TrayRepository.connection("connected"); TrayRepository.accept(reading("open")) }
-        Thread.sleep(1200); assertEquals(1, reminderCount(manager)) // No repeated alert on reconnect.
+        Thread.sleep(10400); assertEquals(1, reminderCount(manager)) // No repeated alert on reconnect.
         manager.cancelAll()
         i.runOnMainSync {
             TrayRepository.accept(reading("closed")); TrayRepository.accept(reading("open"))
             TrayRepository.connection("connecting")
             TrayRepository.connection("connected"); TrayRepository.accept(reading("closed"))
         }
-        Thread.sleep(1200); assertEquals(0, reminderCount(manager))
+        Thread.sleep(10400); assertEquals(0, reminderCount(manager))
         i.runOnMainSync {
             TrayRepository.accept(reading("open"))
             service.onStartCommand(Intent().setAction(SmartTrayBluetoothService.STOP), 0, 1)
         }
-        Thread.sleep(1200); assertEquals(0, reminderCount(manager))
+        Thread.sleep(10400); assertEquals(0, reminderCount(manager))
         assertEquals("disconnected", TrayRepository.snapshot().getString("connection"))
     }
     @Test fun terminalTransportErrorRetainsOnlyThePendingDoorCheck() = withDoorService { service, manager ->
@@ -136,7 +136,7 @@ class ReminderIntegrationTest {
         assertEquals("disconnected", TrayRepository.snapshot().getString("connection"))
         awaitReminder(manager)
         assertFalse(i.targetContext.getSharedPreferences(SmartTrayBluetoothService.CONNECTION_STORE, Context.MODE_PRIVATE).contains("wanted_address"))
-        Thread.sleep(1200); assertEquals(1, reminderCount(manager))
+        Thread.sleep(10400); assertEquals(1, reminderCount(manager))
     }
 
     @Test fun twoTrayPreferencesAndSensorSnapshotsPreserveRemainingSettings() {

@@ -75,10 +75,20 @@ test('문 닫힘 미확인 알림은 연결 유실·오래된 수신에서도 �
   const s=state(); s.doorOpenedAt=now-30000; s.door='closed';
   assert.equal(D.doorLeftOpenNotification(s,now),null);
 });
-test('기존 600초 설정은 300초로 제한하고 기본값·별칭·다른 알림 설정은 보존한다', () => {
-  for (const [input,expected] of [[0,1],[1,1],[300,300],[301,300],[600,300]]) {
+test('기존 시간 설정은 10~300초로 제한하고 기본값·별칭·다른 알림 설정은 보존한다', () => {
+  for (const [input,expected] of [[-1,10],[0,10],[1,10],[9,10],[10,10],[30,30],[300,300],[301,300],[600,300]]) {
     const p=D.loadPreferences({getItem:()=>JSON.stringify({notifications:{doorOpenSeconds:input,umbrella:false},trays:[{alias:'출근'}]})});
     assert.equal(p.notifications.doorOpenSeconds,expected); assert.equal(p.notifications.umbrella,false); assert.equal(p.trays[0].alias,'출근');
+  }
+});
+test('문 열림 최소 10초는 연결 중과 유실 후에도 조기 알림 없이 적용된다', () => {
+  const now = Date.now();
+  for (const input of [1, 9, 10]) for (const connected of [true, false]) {
+    const s=state(); s.preferences.notifications.doorOpenSeconds=input; s.doorOpenedAt=now;
+    if (!connected) { s.connection='disconnected'; s.door='unknown'; }
+    assert.equal(D.doorLeftOpenNotification(s,now+9999),null);
+    const notice=D.doorLeftOpenNotification(s,now+10000);
+    assert.equal(notice.kind,'door-left-open'); assert.match(notice.message,/10초/);
   }
 });
 test('거리 이탈 뒤 원래 기한에 한 번 알리고 재연결은 기한을 바꾸지 않는다', async (context) => {

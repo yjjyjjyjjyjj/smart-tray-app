@@ -58,6 +58,9 @@ main { max-width: 1240px; margin: 0 auto; padding: 36px 36px 20px; }
 .button .icon, .button.compact .icon, .panel-action .button .icon { width: 19px; height: 19px; }
 .button.primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 3px 8px #087d7014; }
 .button.secondary { background: #fff; border-color: #cfded3; color: var(--primary-dark); }
+.button.danger { background: #fff0ee; border-color: #edc4bf; color: #a43c32; }
+.button.danger:hover:not(:disabled) { background: #fbe2de; border-color: #dda69e; }
+.button.danger:focus-visible { outline-color: #a43c32; }
 .button:disabled { opacity: .5; box-shadow: none; }
 .text-button { min-height: 44px; font-size: 14px; gap: 6px; font-weight: 550; }
 .text-button .icon { width: 17px; height: 17px; }
@@ -224,6 +227,13 @@ main { max-width: 1240px; margin: 0 auto; padding: 36px 36px 20px; }
 .setting-row select { flex-shrink: 0; }
 .seconds-input { font-size: 14px; }
 .seconds-input input { width: 76px; padding: 10px; }
+.door-time-setting { flex-wrap: wrap; gap: 12px; }
+.door-time-setting > label { flex: 1 1 190px; min-width: 0; }
+.door-time-controls { display: flex; align-items: center; gap: 12px; }
+.door-time-controls .button { min-width: 68px; }
+.door-time-error { flex-basis: 100%; margin: 0; font-size: 13px; color: #a43c32; }
+#door-open-seconds[aria-invalid="true"] { border-color: #a43c32; }
+
 .detail-settings .panel-action { gap: 14px; padding-top: 20px; }
 .detail-settings .panel-action .device-state { font-size: 14px; font-weight: 550; gap: 9px; }
 .detail-settings .panel-action .button { font-size: 13px; min-height: 44px; padding: 10px 12px; }
@@ -234,6 +244,14 @@ main { max-width: 1240px; margin: 0 auto; padding: 36px 36px 20px; }
 
 /* Forecast and supporting pages. */
 .weather-card { padding: 22px; margin: 22px 0; }
+.weather-region { display: flex; align-items: flex-start; gap: 8px; color: var(--text-secondary); font-size: 15px; line-height: 1.5; }
+.weather-region > .icon { width: 19px; height: 19px; flex: 0 0 19px; margin-top: 2px; color: var(--primary-dark); }
+.weather-region > span { display: flex; flex-wrap: wrap; gap: 3px 8px; min-width: 0; }
+.weather-region-label { flex-shrink: 0; }
+.weather-region-name { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.umbrella-summary-weather > .weather-region { grid-column: 1 / -1; }
+.weather-card > .weather-region { margin: -4px 0 16px; }
+.location-setup > .weather-region { margin: 20px 0 0; }
 .weather-heading { gap: 12px; align-items: center; margin-bottom: 20px; }
 .weather-heading h2 { font-size: 19px; letter-spacing: -.4px; line-height: 1.5; }
 .forecast-panel { padding: 20px; border-radius: 15px; background: #eef6f1; border-color: #d8e8df; }

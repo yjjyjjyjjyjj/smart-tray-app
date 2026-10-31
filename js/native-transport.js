@@ -161,7 +161,7 @@
         // No umbrella command or successful device state is invented before firmware agreement.
         return !nativeMode && !disposed ? mock.playUmbrellaEffect() : false;
       },
-      async playEffect(id) { return nativeMode ? call('command', { command: 'sterilize', trayId: id }) : mock.playEffect(id); },
+      async playEffect(id) { return !nativeMode && !disposed && root.SmartTrayData.CONFIG.trayIds.includes(id) ? mock.playEffect(id) : false; },
       async refreshWeather({ automatic = false } = {}) {
         if (disposed) return false;
         if (weatherRequest) return weatherRequest;

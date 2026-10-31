@@ -8,7 +8,8 @@ internal class WeatherLocationLookup<T : Any>(
     private val ageMillis: (T) -> Long,
     private val request: (String, (T?) -> Unit) -> (() -> Unit),
     private val scheduleTimeout: (() -> Unit) -> (() -> Unit),
-    private val onResult: (T?) -> Unit
+    private val onResult: (T?) -> Unit,
+    private val elapsedRealtimeMillis: () -> Long
 ) {
     private var started = false
     private var finished = false
@@ -27,11 +28,19 @@ internal class WeatherLocationLookup<T : Any>(
         cancelTimeout = scheduleTimeout { complete(recentCache()) }
         for (provider in providers) {
             if (finished) break
+            val requestedAt = elapsedRealtimeMillis()
             var responded = false
             val respond: (T?) -> Unit = response@ { location ->
                 if (finished || responded) return@response
                 responded = true; remaining--
-                if (location != null && ageMillis(location) in 0..FALLBACK_MAX_AGE_MS) complete(location)
+                // The provider checks its cache when the request arrives. Do not reject a
+                // valid boundary fix just because callback delivery took a few milliseconds.
+                // Only the actual request duration (at most 10 s) is allowed, never an
+                // unbounded stale cache or a future timestamp. Keep the measured time intact.
+                val elapsed = elapsedRealtimeMillis() - requestedAt
+                val age = location?.let(ageMillis)
+                if (location != null && age != null && elapsed in 0..REQUEST_TIMEOUT_MS &&
+                    age in 0..(FALLBACK_MAX_AGE_MS + elapsed)) complete(location)
                 else if (remaining == 0) complete(recentCache())
             }
             try {
@@ -50,6 +59,7 @@ internal class WeatherLocationLookup<T : Any>(
     }
 
     companion object {
+        const val REQUEST_TIMEOUT_MS = 10_000L
         const val FRESH_MAX_AGE_MS = 2 * 60_000L
         const val FALLBACK_MAX_AGE_MS = 5 * 60_000L
     }

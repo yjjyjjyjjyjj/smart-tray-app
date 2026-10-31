@@ -33,16 +33,16 @@
       clearTimeout(doorTimer);
       const state = store.get();
       if (state.doorOpenedAt == null || state.doorLeftOpenNotified || !state.preferences.notifications.enabled || !state.preferences.notifications.doorLeftOpen) return;
-      const remaining = state.doorOpenedAt + Math.max(1, Math.min(300, state.preferences.notifications.doorOpenSeconds)) * 1000 - Date.now();
+      const remaining = state.doorOpenedAt + Math.max(10, Math.min(300, state.preferences.notifications.doorOpenSeconds)) * 1000 - Date.now();
       doorTimer = setTimeout(() => store.update(s => {
         const notice = doorLeftOpenNotification(s);
         if (notice) { s.doorLeftOpenNotified = true; addNotice(s, notice); }
       }), Math.max(0, remaining));
     }
-    function runEffect(state, trayId, force = false) {
+    function runEffect(state, trayId) {
       const tray = state.trays[trayId - 1];
       const setting = state.preferences.trays[trayId - 1].effect;
-      if (!isFresh(state) || !['present', 'empty'].includes(trayStatus(state, tray).key) || (!force && !setting.enabled)) return false;
+      if (!setting.enabled || !CONFIG.effectDurations.includes(setting.duration) || trayStatus(state, tray).key !== 'present' || tray.effectUntil > Date.now()) return false;
       tray.effectUntil = Date.now() + setting.duration * 1000;
       clearTimeout(effectTimers.get(trayId));
       effectTimers.set(trayId, setTimeout(() => store.update(s => { s.trays[trayId - 1].effectUntil = 0; }), setting.duration * 1000));
@@ -53,7 +53,7 @@
     }
     function runUmbrellaEffect(state) {
       const setting = state.preferences.umbrella.effect;
-      if (!setting.enabled || setting.duration === 0 || !CONFIG.umbrellaEffectDurations.includes(setting.duration) || umbrellaStatus(state).key !== 'present' || state.umbrella.effectUntil > Date.now()) return false;
+      if (!setting.enabled || !CONFIG.umbrellaEffectDurations.includes(setting.duration) || umbrellaStatus(state).key !== 'present' || state.umbrella.effectUntil > Date.now()) return false;
       state.umbrella.effectUntil = Date.now() + setting.duration * 1000;
       clearTimeout(umbrellaEffectTimer);
       umbrellaEffectTimer = setTimeout(() => store.update(stopUmbrellaEffect), setting.duration * 1000);
@@ -101,6 +101,7 @@
           stopUmbrellaEffect(s);
           log(s, 'device', '장치 연결이 끊겼어요', '새 데이터 수신이 중단되었어요');
         });
+        return true;
       },
       loseConnection() {
         if (store.get().connection !== 'connected') return false;
@@ -175,7 +176,7 @@
         const rain = ['rain', 'rain-snow', 'shower'].includes(condition);
         const now = Date.now(); const end = new Date(now); end.setHours(24, 0, 0, 0);
         const until = Math.min(now + 2 * 3600000, end.getTime());
-        store.update(s => { s.weather = { status: 'ready', source: '가상 날씨', fetchedAt: now, validUntil: end.getTime(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        store.update(s => { s.weather = { status: 'ready', source: '가상 날씨', regionName: '서울특별시 중구', regionStatus: 'ready', fetchedAt: now, validUntil: end.getTime(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           hours: [{ start: now, end: until, condition }],
           windows: rain ? [{ start: now, end: until }] : [] }; });
         return true;
@@ -187,7 +188,13 @@
         this.setWeather(automatic && weather.status === 'ready' ? selected : 'rain');
       },
       settingsChanged() {
-        if ((!store.get().preferences.umbrella.effect.enabled || store.get().preferences.umbrella.effect.duration === 0) && store.get().umbrella.effectUntil) store.update(stopUmbrellaEffect);
+        store.update(s => s.trays.forEach(tray => {
+          const setting = s.preferences.trays[tray.id - 1].effect;
+          if (!setting.enabled || !CONFIG.effectDurations.includes(setting.duration)) {
+            clearTimeout(effectTimers.get(tray.id)); tray.effectUntil = 0;
+          }
+        }));
+        if ((!store.get().preferences.umbrella.effect.enabled || !CONFIG.umbrellaEffectDurations.includes(store.get().preferences.umbrella.effect.duration)) && store.get().umbrella.effectUntil) store.update(stopUmbrellaEffect);
         scheduleDoor();
       },
       playUmbrellaEffect() { let started = false; store.update(s => { started = runUmbrellaEffect(s); }); return started; },
@@ -213,7 +220,7 @@
         }), 2500));
         return true;
       },
-      playEffect(trayId) { let started = false; store.update(s => { started = runEffect(s, trayId, true); }); return started; },
+      playEffect(trayId) { let started = false; store.update(s => { started = runEffect(s, trayId); }); return started; },
       previewNotification() {
         store.update(s => {
           s.notifications.unshift({ id: id(), time: Date.now(), read: false, title: '잠깐, 두고 간 물건이 있어요', message: trayNotificationMessage([s.preferences.trays[0].alias, s.preferences.trays[1].alias]), kind: 'preview', items: [], trayIds: [1, 2] });

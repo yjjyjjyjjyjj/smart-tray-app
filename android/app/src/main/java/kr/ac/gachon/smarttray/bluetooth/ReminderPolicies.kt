@@ -5,6 +5,7 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
+const val DOOR_OPEN_MIN_SECONDS = 10
 const val DOOR_OPEN_MAX_SECONDS = 300
 const val SENSOR_FRESH_MS = 45_000L
 const val WEATHER_FRESH_MS = 60 * 60_000L
@@ -20,7 +21,7 @@ class DoorLeftOpenPolicy {
         if (fresh && door == "closed") { reset(); return null }
         if (fresh && door == "open" && openedAt == null) openedAt = now
         val start = openedAt ?: return null // Unknown/disconnected alone cannot start a timer.
-        val duration = seconds.coerceIn(1, DOOR_OPEN_MAX_SECONDS)
+        val duration = seconds.coerceIn(DOOR_OPEN_MIN_SECONDS, DOOR_OPEN_MAX_SECONDS)
         if (!enabled || notified || now - start < duration * 1000L) return null
         notified = true
         return if (fresh && door == "open")
@@ -29,7 +30,7 @@ class DoorLeftOpenPolicy {
             AlertDecision("현관문이 닫혔는지 확인해 주세요", "문이 열린 뒤 ${duration}초 동안 닫힘 신호를 받지 못했어요. 외출하셨다면 현관문을 확인해 주세요.", emptyList(), "door-left-open")
     }
     fun remaining(seconds: Int, now: Long): Long? = openedAt?.takeIf { !notified }?.let {
-        (it + seconds.coerceIn(1, DOOR_OPEN_MAX_SECONDS) * 1000L - now).coerceAtLeast(0)
+        (it + seconds.coerceIn(DOOR_OPEN_MIN_SECONDS, DOOR_OPEN_MAX_SECONDS) * 1000L - now).coerceAtLeast(0)
     }
 }
 

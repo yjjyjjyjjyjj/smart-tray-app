@@ -187,3 +187,34 @@ test('우산 팬 시간은 기존 설정을 보존하며 저장·복원하고 �
   assert.equal(migrated.trays[1].alias, '차키');
   assert.equal(migrated.trays[1].effect.duration, 30);
 });
+
+test('일반 트레이 살균 OFF는 수동·자동 실행을 차단하고 진행 중 동작을 종료한다', async context => {
+  const { store, transport } = setup();
+  await transport.connect({ demo: true });
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  try {
+    const setting = store.get().preferences.trays[0].effect;
+    assert.equal(transport.playEffect(1), false);
+    Object.assign(setting, { enabled: true, onDetect: true, onDoor: true, duration: 20 });
+    assert.equal(transport.playEffect(1), true);
+    const until = store.get().trays[0].effectUntil;
+    context.mock.timers.tick(1000);
+    assert.equal(transport.playEffect(1), false);
+    assert.equal(store.get().trays[0].effectUntil, until);
+    setting.enabled = false; transport.settingsChanged();
+    assert.equal(store.get().trays[0].effectUntil, 0);
+    assert.equal(transport.playEffect(1), false);
+    transport.setTray(1, false); transport.setTray(1, true);
+    transport.setDoor(false); transport.setDoor(true);
+    assert.equal(store.get().trays[0].effectUntil, 0);
+    setting.enabled = true; transport.settingsChanged();
+    assert.equal(transport.playEffect(1), true);
+    context.mock.timers.tick(19000);
+    assert.ok(store.get().trays[0].effectUntil > Date.now());
+    context.mock.timers.tick(1000);
+    assert.equal(store.get().trays[0].effectUntil, 0);
+    assert.equal(setting.duration, 20);
+    transport.setTray(1, false);
+    assert.equal(transport.playEffect(1), false);
+  } finally { transport.dispose(); context.mock.timers.reset(); }
+});
