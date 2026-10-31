@@ -1,0 +1,13 @@
+{
+  "appId": "kr.ac.gachon.smarttray",
+  "appName": "아마따",
+  "webDir": "www",
+  "backgroundColor": "#f7f8f3",
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "native",
+      "style": "LIGHT",
+      "hidden": false
+    }
+  }
+}

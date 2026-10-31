@@ -1,0 +1,11 @@
+.DS_Store
+.playwright-mcp/
+node_modules/
+www/
+.gradle/
+.npm-cache/
+*.apk
+*.aab
+
+# Local KMA API Hub credential; never copy into web assets.
+android/weather.local.properties
