@@ -200,8 +200,13 @@ class SmartTrayPlugin : Plugin() {
         }
     }
     @PluginMethod fun disconnect(call: PluginCall) = withService(call) { it.disconnect(); call.resolve(JSObject().put("stopped", true)) }
-    @PluginMethod fun command(call: PluginCall) {
-        call.reject("장치 제어는 Arduino 펌웨어 분석 후 연결할 예정이에요. 현재는 설정만 저장돼요.", "PROTOCOL_NOT_CONFIGURED")
+    @PluginMethod fun command(call: PluginCall) = withService(call) { active ->
+        val action = call.getString("command") ?: error("장치 명령을 확인해 주세요.")
+        val space = call.getInt("space") ?: call.getInt("trayId") ?: error("보관 공간을 확인해 주세요.")
+        active.command(action, space).whenComplete { ack, error -> main.post {
+            if (error != null) call.reject(error.message ?: "장치 응답을 확인하지 못했어요.", "DEVICE_COMMAND_FAILED")
+            else call.resolve(JSObject().put("accepted", true).put("req", ack.request).put("status", ack.status))
+        } }
     }
     @PluginMethod fun previewNotification(call: PluginCall) { main.post { guarded(call) {
         val settings = TrayRepository.settingSnapshot()

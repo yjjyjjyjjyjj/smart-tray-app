@@ -107,7 +107,7 @@
   }
   async function save(message = '설정을 저장했어요') {
     const saved = await transport.savePreferences(); render();
-    if (saved) toast(message, 'success');
+    if (saved) toast(transport.isNative && store.get().configSync?.status !== 'applied' ? '휴대폰에 저장했어요. 장치 적용 상태를 확인해 주세요.' : message, 'success');
     else if (!transport.isNative) toast('브라우저 저장을 사용할 수 없어 이번 세션에만 적용해요.', 'info');
   }
   function brand() { return `<span class="brand-mark">${icon('logo')}</span><span>${esc(CONFIG.appName)}<small>EVERYTHING, IN PLACE.</small></span>`; }
@@ -142,8 +142,8 @@
   function button(label, action, symbol, cls = 'button secondary', extra = '') { return `<button class="${cls}" ${action} ${extra}>${symbol ? icon(symbol) : ''}<span>${label}</span></button>`; }
   function statusBadge(status) { return `<span class="state-badge ${status.key}"><i></i>${status.label}</span>`; }
   function freshnessNotice(state) {
-    if (transport.isNative && state.connection === 'connected' && !state.protocolReady) return `<div class="notice neutral" role="status">${icon('info')}<div><strong>Bluetooth 연결됨 · 센서 데이터 확인 대기</strong><p>${esc(state.protocolMessage || '프로토콜 미확정 — Arduino 펌웨어 분석 후 확정 예정')}</p></div></div>`;
-    if (isFresh(state)) return '';
+    if (transport.isNative && state.connection === 'connected' && !state.protocolReady) return `<div class="notice neutral" role="status">${icon('info')}<div><strong>Bluetooth 연결됨 · 센서 데이터 확인 대기</strong><p>${esc(state.protocolMessage || '장치 전원과 Bluetooth 모드를 확인해 주세요.')}</p></div></div>`;
+    if (isFresh(state)) return transport.isNative && state.configSync?.status && state.configSync.status !== 'applied' ? `<div class="notice neutral" role="status">${icon('info')}<p>${esc(state.configSync.message)}</p></div>` : '';
     const offline = state.connection !== 'connected';
     return `<div class="notice warning" role="status">${icon(offline ? 'linkoff' : 'clock')}<div><strong>${offline ? '트레이와 연결이 끊겼어요' : '새로운 데이터를 기다리고 있어요'}</strong><p>${offline ? '마지막 수신 정보로는 현재 소지품 상태를 확인할 수 없어요.' : '표시된 값은 이전 측정값이에요. 장치와 수신 상태를 확인해 주세요.'}</p></div><button class="text-button" data-route="device">${offline ? '다시 연결' : '장치 확인'}${icon('arrow')}</button></div>`;
   }
@@ -221,23 +221,23 @@
   }
   function umbrellaFanSettings(state) {
     const duration = state.preferences.umbrella?.fan?.duration ?? 0;
-    return `<section class="panel settings-panel umbrella-fan-panel" aria-labelledby="umbrella-fan-title"><div class="panel-title"><span class="title-icon">${icon('fan')}</span><div><h2 id="umbrella-fan-title">우산 건조</h2><p>우산을 말릴 팬의 동작 시간을 정해요.</p></div>${transport.isNative ? '<span class="mini-tag">장치 연동 대기</span>' : ''}</div><label class="setting-row"><span><strong>팬 동작 시간</strong><small id="fan-duration-help">우산을 넣으면 팬이 동작해요.<br>0초를 선택하면 팬을 사용하지 않아요.</small></span><select data-setting="umbrella.fan.duration" aria-label="팬 동작 시간" aria-describedby="fan-duration-help">${CONFIG.fanDurations.map(value => `<option value="${value}" ${duration === value ? 'selected' : ''}>${value === 60 ? '1분' : value + '초'}</option>`).join('')}</select></label></section>`;
+    return `<section class="panel settings-panel umbrella-fan-panel" aria-labelledby="umbrella-fan-title"><div class="panel-title"><span class="title-icon">${icon('fan')}</span><div><h2 id="umbrella-fan-title">우산 건조</h2><p>우산을 말릴 팬의 동작 시간을 정해요.</p></div>${transport.isNative ? '<span class="mini-tag">장치 설정</span>' : ''}</div><label class="setting-row"><span><strong>팬 동작 시간</strong><small id="fan-duration-help">우산을 넣으면 팬이 동작해요.<br>0초를 선택하면 팬을 사용하지 않아요.</small></span><select data-setting="umbrella.fan.duration" aria-label="팬 동작 시간" aria-describedby="fan-duration-help">${CONFIG.fanDurations.map(value => `<option value="${value}" ${duration === value ? 'selected' : ''}>${value === 60 ? '1분' : value + '초'}</option>`).join('')}</select></label></section>`;
   }
   function umbrellaEffectSettings(state) {
     const setting = state.preferences.umbrella.effect;
     const status = umbrellaStatus(state);
-    const known = !transport.isNative && ['present', 'empty'].includes(status.key);
+    const known = (!transport.isNative || state.protocolReady) && ['present', 'empty'].includes(status.key);
     const running = known && state.umbrella.effectUntil > Date.now();
     const enabled = setting.enabled;
-    const canStart = !transport.isNative && enabled && status.key === 'present' && !running;
+    const canStart = (!transport.isNative || state.protocolReady && state.configSync?.status === 'applied') && enabled && status.key === 'present' && !running;
     return `<section class="panel settings-panel umbrella-effect-panel" aria-labelledby="umbrella-effect-title">
-      <div class="panel-title"><span class="title-icon lavender">${icon('sparkle')}</span><div><h2 id="umbrella-effect-title">우산 살균</h2><p>우산 공간의 살균 LED 동작을 설정해요.</p></div><span class="mini-tag">${transport.isNative ? '장치 연동 대기' : '목업'}</span></div>
+      <div class="panel-title"><span class="title-icon lavender">${icon('sparkle')}</span><div><h2 id="umbrella-effect-title">우산 살균</h2><p>우산 공간의 살균 LED 동작을 설정해요.</p></div><span class="mini-tag">${transport.isNative ? '장치 설정' : '목업'}</span></div>
       ${switchRow('살균 활성화', '', enabled, 'umbrella.effect.enabled')}
       ${switchRow('우산을 넣으면 자동 실행', '', setting.onDetect, 'umbrella.effect.onDetect', !enabled)}
       ${switchRow('문이 열리면 실행', '우산이 남아 있을 때 실행해요.', setting.onDoor, 'umbrella.effect.onDoor', !enabled)}
       <label class="setting-row ${!enabled ? 'disabled' : ''}"><span><strong>살균 시간</strong></span><select data-setting="umbrella.effect.duration" aria-label="우산 살균 시간" ${!enabled ? 'disabled' : ''}>${CONFIG.umbrellaEffectDurations.map(v => `<option value="${v}" ${setting.duration === v ? 'selected' : ''}>${v}초</option>`).join('')}</select></label>
       <div class="panel-action"><span class="device-state"><span class="led-dot ${!known ? 'unknown' : running ? 'on purple' : ''}" aria-hidden="true"></span><span>${known ? running ? '살균 ON' : '살균 OFF' : '동작 상태 확인 불가'}</span></span>${button('살균 시작', 'data-action="umbrella-effect"', 'sparkle', 'button compact secondary', canStart ? '' : 'disabled')}</div>
-      ${transport.isNative ? '<p class="inline-note">설정은 휴대폰에 저장돼요. 실제 LED 제어는 장치 연동 후 사용할 수 있어요.</p>' : ''}
+      ${transport.isNative ? '<p class="inline-note">설정 적용과 실제 동작 상태는 장치 응답으로 확인해요.</p>' : ''}
     </section>`;
   }
   function umbrella(state) {
@@ -265,8 +265,8 @@
     </div>`;
   }
   function umbrellaFeatures(state) {
-    // Browser preview state only; configured durations are not hardware status.
-    const known = !transport.isNative && ['present', 'empty'].includes(umbrellaStatus(state).key);
+    // Display device-reported outputs, independently of configured durations.
+    const known = (!transport.isNative || state.protocolReady) && ['present', 'empty'].includes(umbrellaStatus(state).key);
     const fan = known && state.umbrella.fanActive === true;
     const effect = known && state.umbrella.effectUntil > Date.now();
     return `<div class="tray-features umbrella-features" aria-label="${known ? '우산 공간 동작 상태' : '우산 공간 동작 상태 확인 불가'}"><span class="${fan ? 'feature-active fan-active' : ''}">${icon('fan')}FAN <b>${known ? fan ? 'ON' : 'OFF' : '—'}</b></span><span class="${effect ? 'feature-active purple' : ''}">${icon('sparkle')}살균 <b>${known ? effect ? 'ON' : 'OFF' : '—'}</b></span></div>`;
@@ -280,11 +280,11 @@
   function detail(state) {
     const tray = state.trays[trayId - 1], preference = state.preferences.trays[trayId - 1], status = trayStatus(state, tray);
     const fresh = ['present', 'empty'].includes(status.key), effect = fresh && tray.effectUntil > Date.now();
-    const canStartEffect = !transport.isNative && preference.effect.enabled && status.key === 'present' && !effect;
+    const canStartEffect = (!transport.isNative || state.protocolReady && state.configSync?.status === 'applied') && preference.effect.enabled && status.key === 'present' && !effect;
     return `${heading(esc(preference.alias), `TRAY ${pad(trayId)} · 이 트레이를 위한 나만의 설정`, button('이름 변경', `data-action="rename" data-id="${trayId}"`, 'edit'), true)}${freshnessNotice(state)}
       <div class="detail-grid"><section class="panel detail-summary"><div class="section-heading"><span class="overline">TRAY ${pad(trayId)}</span>${statusBadge(status)}</div><div class="item-visual detail-visual slot ${status.key === 'empty' ? 'empty-visual' : ''} ${effect ? 'effect-preview' : ''}">${slotIcon(trayId)}<span class="item-shadow"></span></div><h2>${esc(preference.alias)}</h2><p>${status.label}</p><div class="measurement-grid"><div><span>${fresh ? '현재 무게' : '이전 무게 · 현재 확인 불가'}</span><strong>${tray.measuredAt ? tray.weight.toFixed(1) : '—'} <small>g</small></strong></div><div><span>마지막 상태 변경</span><strong class="measurement-time">${time(tray.changedAt)}</strong></div></div><div class="summary-caption">${icon('signal')} ${fresh ? transport.isNative ? '센서 정상' : '가상 센서 정상' : status.label} <span>수신 ${relative(tray.measuredAt)}</span></div></section>
-      <div class="detail-settings"><section class="panel settings-panel"><div class="panel-title"><span class="title-icon amber">${icon('light')}</span><div><h2>LED 설정</h2><p>두고 가는 물건의 자리를 밝혀요</p></div><span class="mini-tag">${transport.isNative ? '장치 연동 대기' : '목업'}</span></div>${switchRow('LED 활성화', '', preference.led.enabled, `tray.${trayId}.led.enabled`)}${switchRow('물건을 놓으면 켜기', '물건이 감지되면 해당 칸을 밝혀요', preference.led.onDetect, `tray.${trayId}.led.onDetect`, !preference.led.enabled)}${switchRow('문이 열리면 켜기', '챙기지 않은 물건의 자리를 알려줘요', preference.led.onDoor, `tray.${trayId}.led.onDoor`, !preference.led.enabled)}<div class="panel-action"><span class="device-state"><span class="led-dot ${!fresh ? 'unknown' : tray.ledActive ? 'on' : ''}" aria-hidden="true"></span><span>${fresh ? tray.ledActive ? 'LED가 켜져 있어요' : 'LED가 꺼져 있어요' : '동작 상태 확인 불가'}</span></span>${button('LED 미리보기', `data-action="led" data-id="${trayId}"`, 'light', 'button compact secondary', fresh ? '' : 'disabled')}</div></section>
-      <section class="panel settings-panel"><div class="panel-title"><span class="title-icon lavender">${icon('sparkle')}</span><div><h2>살균</h2><p>트레이의 살균 동작을 설정해요</p></div><span class="mini-tag">${transport.isNative ? '장치 연동 대기' : '목업'}</span></div>${switchRow('살균 활성화', '', preference.effect.enabled, `tray.${trayId}.effect.enabled`)}${switchRow('물건을 놓으면 자동 실행', '', preference.effect.onDetect, `tray.${trayId}.effect.onDetect`, !preference.effect.enabled)}${switchRow('문이 열리면 실행', '물건이 남아 있는 칸에만 실행해요', preference.effect.onDoor, `tray.${trayId}.effect.onDoor`, !preference.effect.enabled)}<label class="setting-row ${!preference.effect.enabled ? 'disabled' : ''}"><span><strong>살균 시간</strong></span><select data-setting="tray.${trayId}.effect.duration" aria-label="살균 시간" ${!preference.effect.enabled ? 'disabled' : ''}>${CONFIG.effectDurations.map(v => `<option value="${v}" ${preference.effect.duration === v ? 'selected' : ''}>${v}초</option>`).join('')}</select></label><div class="panel-action"><span class="device-state"><span class="led-dot ${!fresh ? 'unknown' : effect ? 'on purple' : ''}" aria-hidden="true"></span><span>${fresh ? effect ? `살균 ON · ${Math.max(1, Math.ceil((tray.effectUntil - Date.now()) / 1000))}초 남음` : '살균 OFF' : '동작 상태 확인 불가'}</span></span>${button('살균 시작', `data-action="effect" data-id="${trayId}"`, 'sparkle', 'button compact secondary', canStartEffect ? '' : 'disabled')}</div></section></div></div><div class="notice neutral">${icon('info')}<p>${transport.isNative ? '설정은 휴대폰에 저장돼요. LED·살균 명령은 펌웨어 분석 후 장치와 연결할 예정이에요.' : '모든 설정은 브라우저 목업에만 적용돼요. 실제 장치의 지원 범위는 Arduino 펌웨어 분석 후 확인할 예정이에요.'}</p></div>`;
+      <div class="detail-settings"><section class="panel settings-panel"><div class="panel-title"><span class="title-icon amber">${icon('light')}</span><div><h2>LED 설정</h2><p>두고 가는 물건의 자리를 밝혀요</p></div><span class="mini-tag">${transport.isNative ? '장치 설정' : '목업'}</span></div>${switchRow('LED 활성화', '', preference.led.enabled, `tray.${trayId}.led.enabled`)}${!transport.isNative ? switchRow('물건을 놓으면 켜기', '물건이 감지되면 해당 칸을 밝혀요', preference.led.onDetect, `tray.${trayId}.led.onDetect`, !preference.led.enabled) : ''}${switchRow('문이 열리면 켜기', '챙기지 않은 물건의 자리를 알려줘요', preference.led.onDoor, `tray.${trayId}.led.onDoor`, !preference.led.enabled)}<div class="panel-action"><span class="device-state"><span class="led-dot ${!fresh ? 'unknown' : tray.ledActive ? 'on' : ''}" aria-hidden="true"></span><span>${fresh ? tray.ledActive ? 'LED가 켜져 있어요' : 'LED가 꺼져 있어요' : '동작 상태 확인 불가'}</span></span>${!transport.isNative ? button('LED 미리보기', `data-action="led" data-id="${trayId}"`, 'light', 'button compact secondary', fresh ? '' : 'disabled') : ''}</div></section>
+      <section class="panel settings-panel"><div class="panel-title"><span class="title-icon lavender">${icon('sparkle')}</span><div><h2>살균</h2><p>트레이의 살균 동작을 설정해요</p></div><span class="mini-tag">${transport.isNative ? '장치 설정' : '목업'}</span></div>${switchRow('살균 활성화', '', preference.effect.enabled, `tray.${trayId}.effect.enabled`)}${switchRow('물건을 놓으면 자동 실행', '', preference.effect.onDetect, `tray.${trayId}.effect.onDetect`, !preference.effect.enabled)}${switchRow('문이 열리면 실행', '물건이 남아 있는 칸에만 실행해요', preference.effect.onDoor, `tray.${trayId}.effect.onDoor`, !preference.effect.enabled)}<label class="setting-row ${!preference.effect.enabled ? 'disabled' : ''}"><span><strong>살균 시간</strong></span><select data-setting="tray.${trayId}.effect.duration" aria-label="살균 시간" ${!preference.effect.enabled ? 'disabled' : ''}>${CONFIG.effectDurations.map(v => `<option value="${v}" ${preference.effect.duration === v ? 'selected' : ''}>${v}초</option>`).join('')}</select></label><div class="panel-action"><span class="device-state"><span class="led-dot ${!fresh ? 'unknown' : effect ? 'on purple' : ''}" aria-hidden="true"></span><span>${fresh ? effect ? `살균 ON · ${Math.max(1, Math.ceil((tray.effectUntil - Date.now()) / 1000))}초 남음` : '살균 OFF' : '동작 상태 확인 불가'}</span></span>${button('살균 시작', `data-action="effect" data-id="${trayId}"`, 'sparkle', 'button compact secondary', canStartEffect ? '' : 'disabled')}</div></section></div></div><div class="notice neutral">${icon('info')}<p>${transport.isNative ? '문이 열리면 남은 물건의 LED가 깜빡여요. 설정 적용과 동작 상태는 장치 응답으로 확인해요.' : '브라우저에서는 가상 장치의 동작을 체험해요.'}</p></div>`;
   }
   function notificationPermissionNotice(state) {
     if (!transport.isNative || state.notificationsAllowed !== false) return '';
@@ -401,7 +401,7 @@
     return `${heading('놓치지 않도록, 알림함', '이곳에서 최근 알림을 다시 확인할 수 있어요.', button('모두 읽음', 'data-action="read-all"', 'check'), true)}<div class="narrow-content">${state.notifications.length ? state.notifications.map(n => `<article class="panel inbox-item ${n.read ? '' : 'unread'}"><span class="event-icon notification">${icon('bell')}</span><div><div class="inbox-meta"><strong>${n.kind === 'preview' ? '미리보기' : '아마따'}</strong><time>${time(n.time)}</time></div><h2>${esc(n.title)}</h2><p>${esc(n.message)}</p></div></article>`).join('') : `<div class="panel">${emptyState('bell', '아직 도착한 알림이 없어요', '외출 알림이 생기면 이곳에 모아둘게요.')}</div>`}<a class="text-button centered" href="#notifications">알림 설정으로 이동 ${icon('arrow')}</a></div>`;
   }
   function about() {
-    return `${heading('빠짐없는 하루의 시작', '아마따의 기능과 이용 방법을 안내해요.', '', true)}<div class="narrow-content"><section class="panel about-card"><div class="brand">${brand()}</div><div class="device-slots" aria-label="트레이 두 칸과 우산 공간">${CONFIG.trayIds.map(id => `<span>${slotIcon(id)}</span>`).join('')}<span>${icon('umbrella')}</span></div><h2>깜빡한 하나 때문에 돌아오지 않도록.</h2><p>나갈 때 한두 개씩 두고 가는 물건.<br>현관문이 열리면 트레이에 남은 물건을 알려드려요.<br>비 오는 날에는 우산도, 오래 열린 문도 한 번 더 확인해요.</p></section><section class="panel about-text"><h2>앱 이용 안내</h2><p>트레이와 휴대폰을 Bluetooth로 연결해 주세요. 위치를 허용하면 내 주변의 비 예보를 확인할 수 있어요.</p><h3>장치 기능 안내</h3><p>Bluetooth 연결과 날씨 확인을 사용할 수 있어요. 센서 상태 확인과 센서 기반 알림, LED·살균·팬 제어는 장치 연동을 준비 중이에요.</p><h3>나의 설정</h3><p>트레이 이름과 설정, 최신 활동 기록 200개는 기기에 저장돼요. 앱을 다시 실행해도 기록이 유지되며, 현재 센서 상태는 장치에 연결한 뒤 확인해요.</p></section></div>`;
+    return `${heading('빠짐없는 하루의 시작', '아마따의 기능과 이용 방법을 안내해요.', '', true)}<div class="narrow-content"><section class="panel about-card"><div class="brand">${brand()}</div><div class="device-slots" aria-label="트레이 두 칸과 우산 공간">${CONFIG.trayIds.map(id => `<span>${slotIcon(id)}</span>`).join('')}<span>${icon('umbrella')}</span></div><h2>깜빡한 하나 때문에 돌아오지 않도록.</h2><p>나갈 때 한두 개씩 두고 가는 물건.<br>현관문이 열리면 트레이에 남은 물건을 알려드려요.<br>비 오는 날에는 우산도, 오래 열린 문도 한 번 더 확인해요.</p></section><section class="panel about-text"><h2>앱 이용 안내</h2><p>트레이와 휴대폰을 Bluetooth로 연결해 주세요. 위치를 허용하면 내 주변의 비 예보를 확인할 수 있어요.</p><h3>장치 기능 안내</h3><p>연결한 장치에서 소지품·우산·문 상태를 확인하고 LED·살균·팬을 설정할 수 있어요. 날씨 예보는 장치 화면에도 표시해요.</p><h3>나의 설정</h3><p>트레이 이름과 설정, 최신 활동 기록 200개는 기기에 저장돼요. 앱을 다시 실행해도 기록이 유지되며, 현재 센서 상태는 장치에 연결한 뒤 확인해요.</p></section></div>`;
   }
   const views = { home, trays, detail, notifications, activity, settings, device, connect, inbox, about, umbrella };
   function rememberFocus(container, update) {
@@ -600,11 +600,11 @@
     if (action === 'door-open' || action === 'door-close') { if (!transport.setDoor(action === 'door-open')) toast('장치 연결과 데이터 수신 상태를 먼저 확인해 주세요.', 'info'); }
     if (action === 'led' || action === 'effect') {
       const result = await (action === 'led' ? transport.playLed(id) : transport.playEffect(id));
-      toast(result ? `${trayDisplayName(store.get().preferences.trays[id - 1].alias)} ${action === 'led' ? 'LED를 2.5초간 미리 보여드려요' : '살균을 시작했어요'}` : action === 'effect' ? '살균 설정과 트레이 상태를 확인해 주세요.' : '최신 센서 데이터를 확인한 후 실행해 주세요.', result ? 'success' : 'info');
+      toast(result ? `${trayDisplayName(store.get().preferences.trays[id - 1].alias)} ${action === 'led' ? 'LED를 2.5초간 미리 보여드려요' : transport.isNative ? '살균 요청을 장치가 접수했어요' : '살균을 시작했어요'}` : action === 'effect' ? '살균 설정과 트레이 상태를 확인해 주세요.' : '최신 센서 데이터를 확인한 후 실행해 주세요.', result ? 'success' : 'info');
     }
     if (action === 'umbrella-effect') {
       const started = await transport.playUmbrellaEffect();
-      toast(started ? '우산 살균을 시작했어요.' : transport.isNative ? '장치 연동 후 사용할 수 있어요.' : '우산 상태와 살균 설정을 확인해 주세요.', started ? 'success' : 'info');
+      toast(started ? transport.isNative ? '우산 살균 요청을 장치가 접수했어요.' : '우산 살균을 시작했어요.' : '우산 상태와 살균 설정을 확인해 주세요.', started ? 'success' : 'info');
     }
     if (action === 'preview-notification') await transport.previewNotification();
     if (action === 'notification-permission') {

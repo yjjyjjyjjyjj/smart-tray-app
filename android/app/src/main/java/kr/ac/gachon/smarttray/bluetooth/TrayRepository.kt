@@ -14,10 +14,12 @@ object TrayRepository {
     private var preferences = defaultPreferences()
     private var state = JSONObject()
     private val listeners = linkedSetOf<(JSONObject) -> Unit>()
+    private var publishing = false
+    private var publishPending = false
     private val routeListeners = linkedSetOf<(String) -> Unit>()
     private val policy = DoorAlertPolicy()
     private var pendingRoute: String? = null
-    const val PROTOCOL_MESSAGE = "프로토콜 미확정 — Arduino 펌웨어 분석 후 확정 예정"
+    const val PROTOCOL_MESSAGE = "Arduino 상태 수신 대기 중이에요. 장치 전원과 Bluetooth 모드를 확인해 주세요."
     fun initialize(context: Context) {
         if (initialized) return
         disk = context.getSharedPreferences("smart_tray", Context.MODE_PRIVATE)
@@ -36,6 +38,7 @@ object TrayRepository {
             .put("notifications", JSONArray()).put("activities", activityHistory.entries)
             .put("activityStorageError", activityHistory.storageError)
             .put("protocolReady", false).put("protocolMessage", PROTOCOL_MESSAGE).put("deviceName", "아마따")
+            .put("configSync", JSONObject().put("status", "offline").put("message", "연결하면 저장한 설정을 장치에 적용해요."))
         initialized = true
     }
     fun snapshot(): JSONObject = JSONObject(state.toString()).put("preferences", JSONObject(preferences.toString()))
@@ -43,7 +46,20 @@ object TrayRepository {
     fun removeObserver(listener: (JSONObject) -> Unit) { listeners.remove(listener) }
     fun observeRoutes(listener: (String) -> Unit) { routeListeners.add(listener) }
     fun removeRouteObserver(listener: (String) -> Unit) { routeListeners.remove(listener) }
-    fun publish() { val copy = snapshot(); listeners.toList().forEach { it(copy) } }
+    fun publish() {
+        publishPending = true
+        if (publishing) return
+        publishing = true
+        try {
+            // A policy/config observer can patch state while notifying. Finish this snapshot
+            // first, then deliver the new one; never overwrite a newer UI snapshot with an old one.
+            do {
+                publishPending = false
+                val copy = snapshot()
+                listeners.toList().forEach { it(copy) }
+            } while (publishPending)
+        } finally { publishing = false }
+    }
     fun patch(block: (JSONObject) -> Unit) { block(state); publish() }
     fun savePreferences(value: JSONObject) {
         val next = sanitize(value)
@@ -52,11 +68,20 @@ object TrayRepository {
         publish()
     }
     fun connection(value: String, error: String = "") {
-        if (value != "connected") { policy.reset(); state.put("lastReceived", JSONObject.NULL).put("door", "unknown") }
+        if (value != "connected") {
+            policy.reset(); state.put("lastReceived", JSONObject.NULL).put("door", "unknown").put("protocolReady", false)
+                .put("configSync", JSONObject().put("status", "offline").put("message", "연결하면 저장한 설정을 장치에 적용해요."))
+        }
         state.put("connection", value).put("connectionError", error)
         publish()
     }
     fun error(message: String) { patch { it.put("connectionError", message) } }
+    fun awaitDeviceState() {
+        policy.reset()
+        patch { it.put("lastReceived", JSONObject.NULL).put("door", "unknown")
+            .put("protocolReady", false).put("protocolMessage", PROTOCOL_MESSAGE)
+            .put("configSync", JSONObject().put("status", "pending").put("message", "장치 상태와 설정을 다시 확인하고 있어요.")) }
+    }
     fun settingSnapshot(): NotificationSettings {
         val flags = preferences.getJSONObject("notifications")
         val trays = preferences.getJSONArray("trays")
@@ -67,28 +92,35 @@ object TrayRepository {
     }
     fun accept(reading: DeviceReading): AlertDecision? {
         if (state.optString("connection") != "connected") return null
-        // Until a decoder can produce a complete valid device snapshot, publish no sensor data.
-        if (reading.door !in listOf("open", "closed") || reading.trays.map { it.id }.toSet() != TRAY_IDS.toSet()
-            || reading.trays.size != TRAY_IDS.size || reading.trays.any { !it.weight.isFinite() || it.weight < 0 || it.sensor !in listOf("ok", "waiting", "error") }) return null
+        if (reading.door !in listOf("open", "closed", "unknown") || reading.trays.map { it.id }.toSet() != TRAY_IDS.toSet()
+            || reading.trays.size != TRAY_IDS.size || reading.trays.any { !it.weight.isFinite() || it.weight !in 0.0..3000.0 || it.sensor !in listOf("ok", "waiting", "error") }) return null
         if (reading.umbrella != null && reading.umbrella.sensor !in listOf("ok", "waiting", "error")) return null
         val now = System.currentTimeMillis()
+        if (reading.boot != null && state.has("firmwareBoot") && state.optLong("firmwareBoot") != reading.boot) policy.reset()
+        reading.boot?.let { state.put("firmwareBoot", it) }
+        reading.sequence?.let { state.put("firmwareSequence", it) }
+        state.put("protocolReady", true).put("protocolMessage", "")
         val umbrella = reading.umbrella
         state.put("umbrella", JSONObject().put("present", umbrella?.present ?: false).put("sensor", umbrella?.sensor ?: "waiting")
+            .put("ledActive", umbrella?.ledActive ?: false).put("effectUntil", umbrella?.sterilizationUntil ?: 0)
+            .put("fanActive", umbrella?.fanActive ?: false).put("fanUntil", umbrella?.fanUntil ?: 0)
             .put("measuredAt", if (umbrella != null && umbrella.sensor != "waiting") now else JSONObject.NULL))
         val old = state.getJSONArray("trays")
         val next = JSONArray(reading.trays.sortedBy { it.id }.map { tray ->
             val previous = old.getJSONObject(tray.id - 1)
             val changed = previous.optString("sensor") != "ok" || previous.optBoolean("present") != tray.present
-            if (changed && tray.sensor == "ok") {
+            if (changed && tray.sensor == "ok" && previous.optString("sensor") == "ok") {
                 val alias = preferences.getJSONArray("trays").getJSONObject(tray.id - 1).getString("alias")
                 log(if (tray.present) "placed" else "removed", trayActivityTitle(alias, tray.present), "트레이 0${tray.id}", tray.id)
             }
-            JSONObject().put("id", tray.id).put("present", tray.present).put("weight", tray.weight).put("sensor", tray.sensor)
+            JSONObject().put("id", tray.id).put("present", tray.present)
+                .put("weight", if (tray.sensor == "ok") tray.weight else previous.optDouble("weight", 0.0)).put("sensor", tray.sensor)
                 .put("ledActive", tray.ledActive).put("effectUntil", tray.sterilizationUntil)
                 .put("changedAt", if (changed) now else previous.optLong("changedAt", now))
                 .put("measuredAt", if (tray.sensor == "waiting") JSONObject.NULL else now)
         })
-        if (state.optString("door") != reading.door) log("door", if (reading.door == "open") "현관문이 열렸어요" else "현관문이 닫혔어요", "문 감지 센서")
+        if (reading.door in listOf("open", "closed") && state.optString("door") != reading.door)
+            log("door", if (reading.door == "open") "현관문이 열렸어요" else "현관문이 닫혔어요", "문 감지 센서")
         state.put("door", reading.door).put("trays", next).put("lastReceived", now)
         val alert = policy.evaluate(reading, settingSnapshot())
         publish()
@@ -136,7 +168,7 @@ object TrayRepository {
             .put("effect", JSONObject().put("enabled", false).put("onDetect", false).put("onDoor", false).put("duration", 10)) }))
     internal fun sanitize(input: JSONObject): JSONObject {
         val result = defaultPreferences().put("setupDone", input.optBoolean("setupDone", false))
-        // Stored configuration only; fan/umbrella sterilization commands await firmware integration.
+        // Preferences remain available offline and are synchronized after a valid device snapshot.
         val fanDuration = input.optJSONObject("umbrella")?.optJSONObject("fan")?.opt("duration")
         val fanSeconds = if (fanDuration is Number && fanDuration.toDouble() in listOf(0.0, 15.0, 30.0, 60.0)) fanDuration.toInt() else 0
         result.getJSONObject("umbrella").getJSONObject("fan").put("duration", fanSeconds)

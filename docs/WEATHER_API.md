@@ -55,3 +55,7 @@ cd android
 공식 기준: [API 허브](https://apihub.kma.go.kr/apiList.do?seqApi=10), [단기예보조회서비스 가이드](https://apihub.kma.go.kr/getAttachFile.do?fileName=단기예보조회서비스_API활용가이드_260623.docx), [기상청 시간대별 예보 설명](https://www.weather.go.kr/wnuri_help/html/weather/short-term.jsp).
 
 개발 빌드의 `AmattaLocation` 로그에는 제공자 이름, 응답 유무, 위치 경과 시간만 기록합니다. 좌표·지역명·인증키·요청 URL은 기록하지 않으며, 릴리스에서는 이 진단 로그를 출력하지 않습니다. 대략적 위치는 OS/Google 서비스에서 갱신 빈도가 제한될 수 있어, 설정이 켜져 있어도 새 측정값을 기한 내 받는다고 보장하지 않습니다. [Google 대략적 위치 동작](https://developers.google.com/android/reference/com/google/android/gms/location/FusedLocationProviderClient)
+
+## Arduino LCD 전송
+
+`FirmwareWeather`가 유효한 오늘의 예보를 wire v1 `weather`로 변환합니다. 비 우선·눈만 있을 때 NO RAIN·둘 다 없을 때 NO RAIN/SNOW, 누락된 시간대/SKY·실패·만료 시 NO DATA를 구분합니다. 실제 펌웨어의 `windows`는 최대 두 개이므로 첫 두 비 구간만 보내며 앱 화면은 모든 비 구간을 표시합니다. TTL은 다음 시간대·최초 조회 후 1시간·자정 이전이며 큐 대기 시간도 차감합니다. 연결한 서비스는 1분마다 만료를 확인하고 필요하면 마지막 확인 위치의 예보만 갱신합니다. 자세한 전송 예시는 [Arduino 연동 명세](ARDUINO_HANDOVER.md)를 참조하세요.

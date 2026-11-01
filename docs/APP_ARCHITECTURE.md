@@ -1,8 +1,8 @@
 # 아마따 앱 구조
 
-**프로토콜 미확정 — Arduino 펌웨어 분석 후 확정 예정**
+**Arduino 소스 v1.1 / wire v1 NDJSON 연동 구현. 실물 통합 시험은 별도.**
 
-웹 UI와 Kotlin의 객체·함수는 앱 내부 도메인 모델입니다. 전송 메시지, Arduino 데이터 포맷 또는 장치 명령 규격이 아닙니다.
+웹 UI와 Kotlin의 객체·함수는 앱 내부 도메인 모델입니다. 실제 전송 모델과 변환은 `ArduinoJsonProtocol`, `FirmwareChannel`, `FirmwareWeather`가 담당하며 [Arduino 연동 명세](ARDUINO_HANDOVER.md)를 따릅니다.
 
 ## 파일과 역할
 
@@ -82,7 +82,7 @@ UI는 HTML/CSS/JS를 유지합니다. Android 파일·동작·권한·연결 복
 - 검색·연결 요청은 화면에서 시작하지만 RFCOMM 소켓과 수신 루프은 서비스가 소유합니다.
 - 서비스의 유효한 수신 데이터만 웹 저장소에 반영합니다. 웹 heartbeat는 Android의 수신 시간을 갱신하지 않습니다.
 - Android 별칭·알림 설정은 SharedPreferences에 저장되어 UI가 닫혀도 알림 정책에 사용됩니다.
-- 프로토콜이 미확정인 현재는 SPP 연결과 센서 수신을 구분합니다. 표준 SPP UUID만 사용하며 센서 패킷/제어 명령을 가정하지 않습니다.
+- SPP 연결·유효 상태 수신·설정 적용 ACK를 구분합니다. 연결 직후 상태 조회, 변경된 공간의 설정 동기화, 상태 수신 뒤 한 요청씩 전송, 15초 수신 중단 시 상태 재조회, LCD 날씨 전송을 서비스가 소유합니다. 수동 시작은 재연결 때 재생하지 않습니다.
 - 체험 모드 진입 시 실제 연결을 해제합니다. 체험 설정은 Android 저장소를 덮어쓰지 않습니다.
 - Android 뒤로 가기와 OS 알림 탭 이동을 웹 라우터와 연결합니다.
 
@@ -90,7 +90,7 @@ UI는 HTML/CSS/JS를 유지합니다. Android 파일·동작·권한·연결 복
 
 ## 세 보관 공간과 조건부 알림
 
-`trays`는 2개만 관리하며 별도 `umbrella`(적외선 유무·센서 상태·측정 시각)와 `weather`(조회 상태·시간·지역 시간대·비 구간)를 추가했습니다. 홈 요약은 세 보관 공간을 표시하고 트레이 수 카운터는 로드셀 트레이 2칸만 셉니다. 우산은 무게 측정과 일반 점등 LED 설정을 사용하지 않으며, 살균 LED 설정은 트레이 1·2번과 독립적인 `preferences.umbrella.effect`에 보관합니다. 우산 건조 팬 시간은 별도의 `preferences.umbrella.fan.duration`(초)에 저장합니다. 0·15·30·60만 허용하며, 기존 설정에 항목이 없거나 잘못된 값이면 0초로 복구합니다. 웹 저장과 Kotlin SharedPreferences에서 같은 규칙을 적용합니다. 이는 제품 설정이며 센서 데이터나 HC-06 전송 규격이 아닙니다. 실제 팬 동작은 아직 연결하지 않았습니다. 우산 살균의 `enabled`·`onDetect`·`onDoor`는 기본 false, `duration`은 일반 트레이와 같은 5·10·20·30초 중 기본 10초이며 웹/Kotlin에서 같은 이관 규칙을 적용합니다. 활성화는 스위치로만 변경하며 OFF일 때 자동 실행과 시간 선택 행을 비활성화합니다. 이전 0·15·60초 등 지원하지 않는 값은 10초·살균 OFF로 전환하되 자동 실행 스위치·팬·별칭을 보존합니다. 유효한 시간과 활성화 설정은 유지합니다. 브라우저만 `umbrella.effectUntil`로 가상 실행을 표시합니다. 실제 앱은 이 값을 생성하거나 미확정 살균 명령을 보내지 않습니다.
+`trays`는 2개만 관리하며 별도 `umbrella`(적외선 유무·센서 상태·측정 시각)와 `weather`(조회 상태·시간·지역 시간대·비 구간)를 추가했습니다. 홈 요약은 세 보관 공간을 표시하고 트레이 수 카운터는 로드셀 트레이 2칸만 셉니다. 우산은 무게 측정과 일반 점등 LED 설정을 사용하지 않으며, 살균 LED 설정은 트레이 1·2번과 독립적인 `preferences.umbrella.effect`에 보관합니다. 우산 건조 팬 시간은 별도의 `preferences.umbrella.fan.duration`(초)에 저장합니다. 0·15·30·60만 허용하며, 기존 설정에 항목이 없거나 잘못된 값이면 0초로 복구합니다. 웹 저장과 Kotlin SharedPreferences에서 같은 규칙을 적용합니다. 이는 제품 설정이며 센서 데이터나 HC-06 전송 규격이 아닙니다. `fan_sec` 설정을 동기화하고 `fan.active/rem_ms`를 실제 표시값으로 사용합니다. 우산 살균의 `enabled`·`onDetect`·`onDoor`는 기본 false, `duration`은 일반 트레이와 같은 5·10·20·30초 중 기본 10초이며 웹/Kotlin에서 같은 이관 규칙을 적용합니다. 활성화는 스위치로만 변경하며 OFF일 때 자동 실행과 시간 선택 행을 비활성화합니다. 이전 0·15·60초 등 지원하지 않는 값은 10초·살균 OFF로 전환하되 자동 실행 스위치·팬·별칭을 보존합니다. 유효한 시간과 활성화 설정은 유지합니다. 브라우저는 `umbrella.effectUntil`을 가상 실행으로 만들며, Android는 `steril_ms`를 수신 시각 기준으로 변환합니다. 수동 살균은 `start_steril`의 accepted 응답을 기다리고 ON 표시는 상태 프레임으로만 바뀝니다.
 
 문 열림 유지 기준은 `notifications.doorOpenSeconds`이며 브라우저 체험과 Kotlin 서비스에서 같은 10~300초 범위를 사용합니다. 실제 앱의 타이머는 Kotlin에 있습니다. `DoorLeftOpenPolicy`는 UI에 표시되는 최신 센서 상태와 별도로 마지막 열림의 대기를 보관하므로 연결 유실·재연결로 초기화되지 않습니다. 취소·중지와 미확인 상태의 안내 규칙은 [프로젝트 README](../README.md#우산비-예보와-현관문-열림-유지-알림)를 참조하세요. `UmbrellaAlertPolicy`는 닫힘→열림 시 우산 있음·유효 비 예보가 모두 충족되어야 알립니다. 우산 거치·제거는 단독 알림을 만들지 않습니다. 예보는 `WeatherManager`가 대략적 현재/마지막 확인 위치로 조회합니다.
 
@@ -106,3 +106,9 @@ UI는 HTML/CSS/JS를 유지합니다. Android 파일·동작·권한·연결 복
 `js/app.js`는 native hydration 완료 후 첫 화면을 결정합니다. 최초 실행은 `#connect`, 설정 완료 뒤 일반 Android 실행은 `#home`이며 알림 탭 경로가 우선합니다. 초기 소개 모달은 없습니다. 연결·위치 설정에서 위치를 나중에 허용할 수 있으며 `setupDone` 저장 실패 시 완료 처리하지 않습니다.
 
 `SmartTrayPlugin`의 `location` 스냅샷은 `permission`과 `enabled`만 UI에 전달합니다. `refreshWeather`가 COARSE_LOCATION을 요청하고 `WeatherManager`가 실제 위치와 예보를 받습니다. `openLocationSettings`와 `openAppLocationSettings`는 사용자의 버튼 동작으로만 시스템 설정을 열고, 복귀 시 권한/위치 상태를 다시 확인합니다. 위도·경도는 UI 스냅샷에 포함하지 않습니다.
+
+## 실제 설정·응답 동기화
+
+휴대폰 설정이 기준이며 연결·boot 변경 시 세 공간에 다시 적용합니다. 변경된 공간만 전송하고 이전 ACK 대기 중 변경은 최신 값으로 합칩니다. `configSync.status`는 offline/pending/applied/error로 저장 성공과 장치 적용을 구분합니다. `lastDeviceAck`는 접수·거절·완료·중단을 전달합니다. 요청 ID로 응답을 대응하고 6초 ACK 제한·20초 대기 제한·연결 해제 시 요청 취소를 적용합니다. 설정이나 접수 응답으로 LED·살균·팬 ON을 생성하지 않습니다.
+
+자동 거치·문 열림·제거 및 타이머는 펌웨어가 담당합니다. 우산 일반 LED는 문 열림 활성화로 동기화하고 별도 UI는 없습니다. 실제 연결 화면의 거치 일반 점등·LED 미리보기는 펌웨어가 지원하지 않아 표시하지 않습니다.

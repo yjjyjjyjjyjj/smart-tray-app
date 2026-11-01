@@ -41,9 +41,15 @@ class DoorAlertPolicyTest {
         closed(policy); assertNotNull(policy.evaluate(DeviceReading("open", trays), settings))
         policy.reset(); assertNull(policy.evaluate(DeviceReading("open", trays), settings))
     }
-    @Test fun pendingFirmwareDoesNotInventProfileOrSensorReadings() {
-        val pending = PendingFirmwareProtocol()
-        assertFalse(pending.ready)
+    @Test fun unknownDoorInvalidatesTransitionBaseline() {
+        val policy = DoorAlertPolicy()
+        closed(policy)
+        assertNull(policy.evaluate(DeviceReading("unknown", trays), settings))
+        assertNull(policy.evaluate(DeviceReading("open", trays), settings))
+    }
+    @Test fun incompleteFirmwareInputDoesNotInventSensorReadings() {
+        val pending = ArduinoJsonProtocol()
+        assertTrue(pending.ready)
         assertTrue(pending.feed(byteArrayOf(1, 2, 3)).isEmpty())
     }
 }

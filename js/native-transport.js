@@ -6,6 +6,7 @@
     let listener, openedListener, appListener, finishPendingConnection;
     let connecting = false, connectionOperation = 0;
     let disposed = false, weatherRequest, notificationRequest;
+    const pendingEffects = new Set();
     let openedFromNotification = false;
     const plugin = runtime?.plugin;
     const report = error => {
@@ -17,7 +18,7 @@
       if (!snapshot || !nativeMode || disposed) return;
       store.update(s => {
         for (const key of ['preferences', 'connection', 'connectionError', 'scanState', 'scanResults',
-          'bluetooth', 'connectionPhase', 'retryAttempt', 'deviceAddress', 'transportBytesReceived', 'lastTransportReceived', 'lastReceived', 'door', 'trays', 'umbrella', 'weather', 'location', 'notifications', 'activities', 'activityStorageError', 'protocolReady', 'protocolMessage', 'deviceName', 'notificationsAllowed', 'notificationPermission', 'notificationSettingsRequired']) {
+          'bluetooth', 'connectionPhase', 'retryAttempt', 'deviceAddress', 'transportBytesReceived', 'lastTransportReceived', 'lastReceived', 'door', 'trays', 'umbrella', 'weather', 'location', 'notifications', 'activities', 'activityStorageError', 'protocolReady', 'protocolMessage', 'configSync', 'weatherSync', 'lastDeviceAck', 'firmwareBoot', 'firmwareSequence', 'deviceName', 'notificationsAllowed', 'notificationPermission', 'notificationSettingsRequired']) {
           if (snapshot[key] !== undefined) s[key] = snapshot[key];
         }
         s.demo = false;
@@ -156,12 +157,23 @@
         if (!permission?.granted) return false;
         return call('previewNotification');
       },
-      async playLed(id) { return nativeMode ? call('command', { command: 'led', trayId: id }) : mock.playLed(id); },
-      async playUmbrellaEffect() {
-        // No umbrella command or successful device state is invented before firmware agreement.
-        return !nativeMode && !disposed ? mock.playUmbrellaEffect() : false;
+      async playLed(id) { return !nativeMode && !disposed ? mock.playLed(id) : false; },
+      async playUmbrellaEffect() { return nativeMode ? adapter.playEffect(3) : !disposed && mock.playUmbrellaEffect(); },
+      async playEffect(id) {
+        if (disposed || ![1, 2, 3].includes(id)) return false;
+        if (!nativeMode) return id === 3 ? mock.playUmbrellaEffect() : mock.playEffect(id);
+        const state = store.get();
+        const sensor = id === 3 ? state.umbrella : state.trays[id - 1];
+        const setting = id === 3 ? state.preferences.umbrella.effect : state.preferences.trays[id - 1].effect;
+        const status = id === 3 ? root.SmartTrayData.umbrellaStatus(state) : root.SmartTrayData.trayStatus(state, sensor);
+        if (!state.protocolReady || state.configSync?.status !== 'applied' || !setting.enabled ||
+            status.key !== 'present' || sensor.effectUntil > Date.now() || pendingEffects.has(id)) return false;
+        pendingEffects.add(id);
+        try {
+          const result = await call('command', { command: 'start_steril', space: id });
+          return !disposed && nativeMode && result?.accepted === true;
+        } finally { pendingEffects.delete(id); }
       },
-      async playEffect(id) { return !nativeMode && !disposed && root.SmartTrayData.CONFIG.trayIds.includes(id) ? mock.playEffect(id) : false; },
       async refreshWeather({ automatic = false } = {}) {
         if (disposed) return false;
         if (weatherRequest) return weatherRequest;

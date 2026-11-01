@@ -287,11 +287,67 @@ test('Native disconnect failure leaves connection state intact and supports retr
   assert.deepEqual(calls, ['disconnect-failed', 'disconnect']);
   transport.dispose();
 });
-test('Native tray sterilization never sends an unimplemented command', async () => {
+test('Native sterilization blocks commands until valid sensor data and configuration ACKs arrive', async () => {
   const { store, transport, calls } = setup(); await transport.initialize();
   for (const enabled of [false, true]) {
     store.update(s => { s.preferences.trays[0].effect.enabled = enabled; });
     assert.equal(await transport.playEffect(1), false);
   }
   assert.deepEqual(calls, []); transport.dispose();
+});
+
+function enableNativeEffect(h, id = 1) {
+  const now = Date.now();
+  h.state.connection = 'connected'; h.state.protocolReady = true; h.state.lastReceived = now;
+  h.state.configSync = { status: 'applied', message: 'applied' };
+  const sensor = id === 3 ? h.state.umbrella : h.state.trays[id - 1];
+  Object.assign(sensor, { present: true, sensor: 'ok', measuredAt: now, effectUntil: 0 });
+  const setting = id === 3 ? h.state.preferences.umbrella.effect : h.state.preferences.trays[id - 1].effect;
+  setting.enabled = true;
+}
+test('Native tray and umbrella send the firmware action and wait for accepted ACK without fabricating ON', async () => {
+  for (const id of [1, 2, 3]) {
+    const h = setup(); enableNativeEffect(h, id);
+    let resolve, payload;
+    h.plugin.command = args => { payload = args; return new Promise(done => { resolve = done; }); };
+    await h.transport.initialize();
+    const pending = id === 3 ? h.transport.playUmbrellaEffect() : h.transport.playEffect(id);
+    assert.deepEqual(payload, { command: 'start_steril', space: id });
+    assert.equal(await h.transport.playEffect(id), false, 'duplicate request is blocked');
+    const sensor = () => id === 3 ? h.store.get().umbrella : h.store.get().trays[id - 1];
+    assert.equal(sensor().effectUntil, 0);
+    resolve({ accepted: true, req: 'a123', status: 'accepted' }); assert.equal(await pending, true);
+    assert.equal(sensor().effectUntil, 0, 'accepted is not an output-state packet');
+    const realSensor = id === 3 ? h.state.umbrella : h.state.trays[id - 1];
+    realSensor.effectUntil = Date.now() + 10000;
+    h.listeners.stateChanged(h.snapshot());
+    assert.ok(sensor().effectUntil > Date.now());
+    h.transport.dispose();
+  }
+});
+test('Native effect rejects stale, disabled, empty, unsynchronized and running spaces', async () => {
+  for (const change of [
+    h => { h.state.lastReceived = Date.now() - 46000; },
+    h => { h.state.preferences.trays[0].effect.enabled = false; },
+    h => { h.state.trays[0].present = false; },
+    h => { h.state.trays[0].sensor = 'error'; },
+    h => { h.state.trays[0].effectUntil = Date.now() + 1000; },
+    h => { h.state.configSync.status = 'pending'; },
+    h => { h.state.configSync.status = 'error'; },
+  ]) {
+    const h = setup(); enableNativeEffect(h); change(h);
+    await h.transport.initialize(); assert.equal(await h.transport.playEffect(1), false);
+    assert.deepEqual(h.calls, []); h.transport.dispose();
+  }
+});
+test('Native rejected or timed-out command stays OFF and can be retried only by the user', async () => {
+  const h = setup(); enableNativeEffect(h); let requests = 0;
+  h.plugin.command = async () => { requests++; throw Error('no_item'); };
+  await h.transport.initialize(); assert.equal(await h.transport.playEffect(1), false);
+  assert.equal(requests, 1); assert.equal(h.store.get().trays[0].effectUntil, 0);
+  await new Promise(setImmediate); assert.equal(requests, 1);
+  h.plugin.command = async () => { requests++; return { accepted: true }; };
+  assert.equal(await h.transport.playEffect(1), true); assert.equal(requests, 2);
+  assert.equal(await h.transport.playLed(1), false, 'firmware has no normal LED preview action');
+  assert.equal(await h.transport.playEffect(4), false); h.transport.dispose();
 });

@@ -2,26 +2,20 @@ package kr.ac.gachon.smarttray.bluetooth
 
 val TRAY_IDS = listOf(1, 2)
 
-/** App domain types, NOT a sensor wire format. Populate only after firmware analysis. */
+/** App domain types. Remaining firmware durations are converted to receipt-time deadlines. */
 data class TrayReading(val id: Int, val present: Boolean, val weight: Double,
     val sensor: String = "ok", val ledActive: Boolean = false, val sterilizationUntil: Long = 0)
-data class UmbrellaReading(val present: Boolean, val sensor: String = "ok")
-data class DeviceReading(val door: String, val trays: List<TrayReading>, val umbrella: UmbrellaReading? = null)
+data class UmbrellaReading(val present: Boolean, val sensor: String = "ok",
+    val ledActive: Boolean = false, val sterilizationUntil: Long = 0,
+    val fanActive: Boolean = false, val fanUntil: Long = 0)
+data class DeviceReading(val door: String, val trays: List<TrayReading>, val umbrella: UmbrellaReading? = null,
+    val boot: Long? = null, val sequence: Long? = null)
 
 interface FirmwareProtocol {
     val ready: Boolean
-    /** Stateful byte-stream boundary. A chunk can contain partial/multiple frames.
-     * A verified implementation must bound buffering, validate frames and retain partial input.
-     * No delimiter, encoding or frame length is assumed here. Called on the single I/O worker. */
+    /** Stateful, bounded stream decoder; one read can contain partial/multiple frames. */
     fun feed(chunk: ByteArray): List<DeviceReading>
     fun reset()
-}
-
-/** Drop unknown bytes without accumulating them or fabricating sensor/command results. */
-class PendingFirmwareProtocol : FirmwareProtocol {
-    override val ready = false
-    override fun feed(chunk: ByteArray): List<DeviceReading> = emptyList()
-    override fun reset() = Unit
 }
 
 data class NotificationSettings(val enabled: Boolean, val door: Boolean, val belongings: Boolean,
@@ -47,7 +41,7 @@ class DoorAlertPolicy {
     private var previousDoor = "unknown"
     fun reset() { previousDoor = "unknown" }
     fun evaluate(reading: DeviceReading, settings: NotificationSettings): AlertDecision? {
-        if (reading.door !in listOf("open", "closed")) return null
+        if (reading.door !in listOf("open", "closed")) { reset(); return null }
         // Initial/reconnection snapshots establish a baseline, not a new door-opening event.
         val opened = reading.door == "open" && previousDoor == "closed"
         previousDoor = reading.door

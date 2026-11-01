@@ -28,18 +28,21 @@
 | `SmartTrayPlugin.kt` | 권한 요청, 서비스 바인딩, JS 메서드/이벤트, 알림 탭 전달 |
 | `SmartTrayBluetoothService.kt` | Classic 검색·페어링, 소켓 소유, 재연결, 네이티브 알림 호출 |
 | `TrayRepository.kt` | 프로세스 상태, 설정·최신 활동 200개 영구 저장, 센서 갱신, 세션 알림함 |
-| `FirmwareProtocol.kt` | 펌웨어 연동 경계 및 순수 Kotlin 문 열림 알림 정책 |
+| `FirmwareProtocol.kt` | 센서 도메인과 문 열림 알림 정책 |
+| `ArduinoJsonProtocol.kt` | NDJSON 상태·ACK·순번·boot 검증 |
+| `FirmwareChannel.kt` | 167바이트 설정/명령 큐·ACK 추적·타임아웃 |
+| `FirmwareWeather.kt` | LCD 날씨·두 비 구간·유효 기한 |
 | `TrayNotifications.kt` | Android 연결 유지 알림·외출 알림 채널, 대상 화면 PendingIntent |
 
 화면 종료 시 플러그인은 서비스 바인딩과 구독만 정리합니다. 사용자 연결로 시작된 포그라운드 서비스가 BluetoothSocket을 계속 소유합니다. 앱 복귀 시 저장소 스냅샷으로 UI를 갱신하며 WebView 타이머로 센서 수신 시각을 갱신하지 않습니다.
 
 Android 설정은 SharedPreferences가 기준이고 웹 저장소는 표시용 캐시입니다. 가상 체험 모드로 전환하면 실제 Bluetooth 연결을 해제합니다. 체험 설정과 센서값은 Android 서비스에 반영하지 않으며, 실제 연결 모드로 돌아오면 네이티브 설정을 다시 읽습니다. Android 앱을 새로 열면 실제 연결 모드에서 시작합니다.
 
-## 통신 구현과 펌웨어 대기 범위
+## 통신 구현과 실물 검증 범위
 
 Classic 검색·페어링 목록·시스템 페어링·SPP/RFCOMM 소켓·서비스 유지·저장된 연결 의도 복구를 구현했습니다. 소켓 I/O는 `bluetooth/RfcommSession.kt`, Android 소켓 어댑터는 `bluetooth/AndroidSerialSocket.kt`에 있습니다. 기존 `.ble` 패키지와 GATT 타입/콜백은 제거했습니다.
 
-권한 차이, 연결/페어링 제한 시간, 재연결 횟수·간격, 취소와 서비스 재생성, 실제 기기 체크리스트는 **[HC-06 통신 명세](HC06_INTEGRATION_NOTES.md)** 한곳에서 관리합니다. 센서 규격은 아직 없으므로 `PendingFirmwareProtocol.feed()`는 데이터를 생성하지 않으며 장치 `command`는 거부합니다. `DeviceReading`은 전송 형식이 아닌 앱 도메인 타입입니다.
+권한 차이, 연결/페어링 제한 시간, 재연결 횟수·간격, 취소와 서비스 재생성, 실제 기기 체크리스트는 **[HC-06 통신 명세](HC06_INTEGRATION_NOTES.md)** 한곳에서 관리합니다. `ArduinoJsonProtocol`은 실제 NDJSON 상태·ACK를 검증하고, `FirmwareChannel`이 상태 조회·설정·수동 시작/중지·응답 제한 시간을 처리합니다. `FirmwareWeather`는 1602 LCD용 날씨를 만듭니다. wire 규격·167바이트 제한·USB SERIAL 모드·설정 기준은 [Arduino 연동 명세](ARDUINO_HANDOVER.md)를 참조하세요. `DeviceReading`은 디코딩 후 앱 도메인 타입입니다.
 
 기기 연결 과정에서는 Bluetooth 권한만 요청합니다. 연결이 완료되면 알림을 허용해야 남은 물건·비 예보 우산·오래 열린 문 안내를 받을 수 있음을 설명하고, 사용자가 허용 버튼을 눌렀을 때 Android 13+ 알림 권한을 요청합니다. 거절해도 연결과 화면 확인은 유지하며 홈·연결 완료·알림 설정 화면에 기능 제한과 허용 버튼을 표시합니다. 재요청 가능 상태에서는 권한 창을 다시 띄우고, 영구 거절·앱 알림 차단·‘외출 전 확인’ 채널 차단 상태에서는 명시적인 버튼으로 해당 휴대폰 알림 설정을 엽니다. 설정에서 돌아오면 상태를 갱신하고 허용된 경우 안내를 없앱니다. 거절 직후 설정을 강제로 열거나 권한 창을 반복해서 띄우지 않습니다. 알림 미리보기는 실제 로컬 시스템 알림이며 브라우저에서는 HTML 미리보기입니다. 최초/재연결 센서 스냅샷은 문 상태 기준값으로 사용하고 이후 닫힘→열림에서 평가합니다.
 

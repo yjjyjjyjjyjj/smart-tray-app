@@ -88,7 +88,7 @@ class RfcommSessionTest {
                 val length=buffer.removeAt(0).toInt(); frames.add((0 until length).map{buffer.removeAt(0)})
             } }
             assertEquals(listOf(listOf<Byte>(7,8),listOf<Byte>(9)),frames)
-            assertTrue(PendingFirmwareProtocol().feed(byteArrayOf(2,7,8,1,9)).isEmpty())
+            assertTrue(ArduinoJsonProtocol().feed(byteArrayOf(2,7,8,1,9)).isEmpty())
         }
     }
     @Test fun eofClosesSocketAndSignalsOneFailure() {

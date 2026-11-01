@@ -384,3 +384,51 @@ Arduino 팀에서 실제 펌웨어/버전, 이름·주소·PIN, UART 설정, 원
 - `npm test`: **61개 통과**. Android `:app:testDebugUnitTest --rerun`: **77개 통과**, 실패·오류 없음. `npm run sync:android`, `:app:assembleDebug` 성공 및 원본/Android 웹 자산 일치 확인.
 - 독립 Playwright 컨텍스트에서 **103개 검사 통과**: 최신 AMATTA 장치명으로 갱신한 `tests/browser-flow.cjs` 37개, `tests/review-fixes-flow.cjs` 24개, `tests/native-review-fixes-flow.cjs` 16개, 개발자 드로어 16개, 홈 날씨 흐름 10개. 브라우저용 흐름은 새 컨텍스트의 루트 페이지를 연 뒤 실행하고, 네이티브 응답을 모사하는 흐름은 초기 스크립트 주입을 위해 빈 페이지에서 실행합니다.
 - 320/393/495px에서 시간 저장 행의 가로 넘침이 없었습니다. 네이티브 응답 검증은 성공·실패·지연 응답을 모사한 테스트로, 실제 HC-06 연결 해제나 센서·LED 동작 시험이 아닙니다. 실제 휴대폰 설치/실행은 이번 작업에 포함하지 않았습니다.
+
+
+## Arduino 실제 프로토콜 연동 (2026-11-01)
+
+기준: `smart-tray-arduino` 커밋 `adfd4bf60d386cdc3cab8d6778413ea9441669de`, `main_edit.c/main_edit.c.ino` 소스 v1.1 / wire v1. 펌웨어 README와 앱 README·`docs/`를 대조하고 실제 코드의 수신 버퍼 167바이트·요청 ID 11자·LCD 두 비 구간 제한을 적용했습니다. [현재 연동 명세](ARDUINO_HANDOVER.md)를 참조하세요.
+
+### 구현 및 자동 검증
+
+- `ArduinoJsonProtocol`: NDJSON 분할·병합·CRLF, UTF-8/JSON/전체 필드 검증, 2KiB 한도와 다음 줄 복구, 무게/센서/출력 범위, ACK 분리, 순번 중복·역순·boot 및 uint16/uint32 롤오버. 모든 바이트 경계에서 나누어 수신하는 회귀 테스트를 포함합니다.
+- `FirmwareChannel`: 초기 상태 조회, 167바이트 이내 설정/명령, 요청 ID 대응, 한 요청씩 상태 프레임 뒤 전송, accepted/rejected와 completed/stopped 구분, ACK 6초·전송 대기 20초, 연결 해제·재부팅에서 요청 취소, 수동 시작 자동 재실행 없음. LCD TTL에서 큐 대기와 전달 여유를 차감합니다.
+- 서비스: 첫 유효 상태 뒤 세 공간 설정과 날씨 전송, 변경한 공간만 적용, ACK 대기 중 재변경은 최신 값으로 합침, 수신 중단 15초 후 상태 재조회, boot/재연결에서 설정 재적용. 이 복구 경로는 구현·컴파일 검증이며 물리 장치 복구 성공을 확인한 것은 아닙니다.
+- 저장소: 일반 LED·살균·팬 상태 반영, 센서 오류 때 마지막 정상 무게 보관, 문 미확인을 닫힘으로 기록하지 않음, 재부팅 문 상태를 알림 기준값으로 사용. 설정/알림 observer가 상태를 바꾸어도 예전 스냅샷이 나중에 전달되지 않는 회귀 테스트를 추가했습니다.
+- `FirmwareWeather`: 오늘 남은 예보의 비 우선, 눈만 있을 때 NO RAIN, 비·눈이 없을 때 NO RAIN/SNOW, 불완전·미허용·실패·만료 NO DATA, 최대 두 비 구간·24:00·최초 조회 기한·시간대/자정 제한.
+- `npm test`: **64개 통과**, 실패 0. 트레이 1/2·우산 3의 실제 액션 이름, ACK 대기와 거절/유실, 중복 차단, 설정 적용 전·오래된 센서·실행 중 차단, ACK만으로 ON을 만들지 않는 것을 포함합니다.
+- Android `:app:testDebugUnitTest`: **94개 통과**, 실패/오류/건너뜀 0.
+- `npm run sync:android`, `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, `:app:lintDebug` 완료. 최종 lint 오류 0, 경고 22. 웹 원본·`www`·Android 자산의 `app.js/native-transport.js` 해시 일치. 디버그 APK: `android/app/build/outputs/apk/debug/app-debug.apk`.
+- README와 `docs/`의 로컬 Markdown 파일 링크 **63개**가 존재하는 대상으로 연결됨을 확인했습니다.
+
+### 브라우저 검증
+
+모두 새 Playwright context에서 실행했습니다. 사용자 브라우저의 저장값·탭은 변경하지 않았습니다.
+
+| 흐름 | 확인 항목 |
+| --- | ---: |
+| `tests/browser-flow.cjs` | 37 |
+| `tests/review-fixes-flow.cjs` | 24 |
+| `tests/native-review-fixes-flow.cjs` | 16 |
+| `tests/firmware-ui-flow.cjs` | 24 |
+| 합계 | **101** |
+
+새 펌웨어 UI 흐름은 네이티브 응답 fixture로 설정 ACK 대기·수동 시작 접수·거절·출력 상태 갱신·트레이/우산 공간 번호·팬/살균 ON·수신 지연 차단을 확인했습니다. 실제 연결 화면에서 지원하지 않는 거치 일반 LED 점등·일반 LED 미리보기를 숨겼고, 브라우저 체험은 유지합니다. 320/393/495px × 트레이 상세/우산/목록의 가로 넘침이 없으며 새 흐름의 브라우저 실행 오류는 0개입니다.
+
+### 이번 작업에서 수행하지 않은 검증
+
+실제 HC-06·센서·LED·팬·LCD와 Android 휴대폰 사이의 통합 시험, 물리 동작 명령 발송, 휴대폰 앱 설치, 기기 계측 테스트 실행, Arduino 빌드/업로드는 수행하지 않았습니다. 이번 자동 테스트와 브라우저 fixture를 물리 Bluetooth 송수신·실제 출력 성공으로 해석하지 않습니다. 펌웨어 원본은 변경하지 않았으며 Git 커밋·원격 푸시는 수행하지 않았습니다. USB SERIAL 모드에서 Bluetooth가 꺼지는 점과 SoftwareSerial의 실제 송수신 타이밍은 실물 시험 때 반드시 확인합니다.
+
+
+## 실제 휴대폰 ↔ AMATTA 센서 수신 확인 (2026-11-01)
+
+연결된 Samsung SM-F976N의 실제 Android 앱에서 근처 기기 권한을 허용하고 검색된 `AMATTA`에 앱의 연결 흐름으로 연결했습니다. 네이티브 `getState`와 앱 화면을 확인했으며, 브라우저 fixture·센서값 주입·가상 모드는 사용하지 않았습니다. `runtime=android`, `demo=false`, `connection=connected`, `protocolReady=true`, `configSync.status=applied`를 확인했습니다.
+
+- 약 **30.28초 동안 31회** 관찰. boot 14, seq **367 → 397**, 서로 다른 순번 31개. 관찰 중 연결 끊김 0회, 프로토콜 미준비 0회, 샘플 시점의 마지막 센서 수신 경과 최대 **870ms**. 약 1초 주기의 실제 상태 갱신을 확인했습니다.
+- 1번 트레이: 센서 ok / 물건 없음 / 0g. 2번 트레이: 센서 ok / 물건 없음 / 0g. 문: 닫힘. 사용자가 알려준 실제 상태와 일치했습니다.
+- **우산: 센서 ok / 우산 있음이 지속 보고되었지만, 사용자는 실제 우산 공간이 비어 있다고 확인했습니다. 우산 판정은 불일치하며 정상으로 검증하지 않았습니다.** 트레이 목록 화면도 수신한 값대로 ‘우산 있음’을 표시했습니다.
+- 디코더의 Boolean → `UmbrellaReading` → `TrayRepository` → 웹 상태 전달에는 반전이 없습니다. 검토한 펌웨어는 A3의 LOW를 우산 감지로 판정합니다. 실제 A3 전압·센서 출력/감도/설치·배선·업로드된 펌웨어 상태는 직접 측정하지 않았으므로 불일치의 정확한 원인은 아직 확정하지 않았습니다. 이 컴퓨터에서 Arduino USB 직렬 포트는 확인되지 않았습니다.
+- 트레이에 물건을 올리거나 제거할 때의 무게 변화와 우산 거치/제거·문 개폐 전환, 실제 LED·살균·팬 출력은 이번에 검증하지 않았습니다. Bluetooth 연결 및 실제 상태 스트림 수신 성공과 센서 실물 판정 성공을 구분합니다.
+
+앱은 AMATTA에 연결된 상태로 두었습니다. 이번 확인을 위해 제품 코드를 변경하거나 Arduino 펌웨어를 업로드하지 않았습니다. 앞선 ‘실물 통합 시험 미수행’ 기록 중 센서 수신 확인 범위만 이번 결과로 갱신하며, 나머지 출력·재연결·전환 시험은 여전히 별도입니다.

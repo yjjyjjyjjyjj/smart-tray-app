@@ -16,6 +16,7 @@ import org.json.JSONObject
 import java.io.EOFException
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.CompletableFuture
 
 @SuppressLint("MissingPermission") // Public gates + native permission checks + SecurityException handling.
 @Suppress("DEPRECATION")
@@ -42,12 +43,132 @@ class SmartTrayBluetoothService : Service() {
     private var discoveryStarted = false
     private var retry = ReconnectPolicy()
     private var epoch = 0L
+    private var firmware: FirmwareChannel? = null
+    private val attemptedConfig = mutableMapOf<Int, String>()
+    private val appliedConfig = mutableMapOf<Int, String>()
+    private val pendingConfig = mutableSetOf<Int>()
+    private val configErrors = mutableMapOf<Int, String>()
+    private var weatherSignature: String? = null
+    private var firmwareBoot: Long? = null
+    private var lastSensorElapsed = 0L
+    private var noticeText: String? = null
+    private val commandSpaces = mutableSetOf<Int>()
+    private val deviceObserver: (JSONObject) -> Unit = { syncDevice(it) }
+    private val weatherTick = object : Runnable {
+        override fun run() {
+            if (!destroyed && wanted) {
+                syncDevice(TrayRepository.snapshot())
+                val forecast = WeatherManager.forecast
+                if (WeatherManager.permitted(this@SmartTrayBluetoothService) &&
+                    WeatherManager.hasLocation(this@SmartTrayBluetoothService) &&
+                    (forecast == null || !forecast.fresh(System.currentTimeMillis())))
+                    WeatherManager.refresh(this@SmartTrayBluetoothService, false)
+                main.postDelayed(this, 60_000)
+            }
+        }
+    }
+    private fun newChannel() = FirmwareChannel(session::write,
+        { delay, action ->
+            val task = Runnable { action() }; main.postDelayed(task, delay)
+            val cancel: () -> Unit = { main.removeCallbacks(task) }; cancel
+        }, { action -> main.post { action() } }, { ack ->
+            TrayRepository.patch { it.put("lastDeviceAck", JSONObject().put("req", ack.request)
+                .put("status", ack.status).put("reason", ack.reason)) }
+        })
+    private fun clearFirmware() {
+        val previous = firmware; firmware = null // Ignore callbacks from the old channel.
+        previous?.close()
+        attemptedConfig.clear(); appliedConfig.clear(); pendingConfig.clear(); configErrors.clear()
+        weatherSignature = null; firmwareBoot = null; commandSpaces.clear()
+        main.removeCallbacks(weatherTick)
+    }
+    private fun beginDeviceSession() {
+        clearFirmware(); umbrellaPolicy.reset(); TrayRepository.awaitDeviceState()
+        lastSensorElapsed = SystemClock.elapsedRealtime()
+        val channel = newChannel(); firmware = channel
+        channel.start().whenComplete { _, error ->
+            if (firmware === channel && error != null && !TrayRepository.snapshot().optBoolean("protocolReady"))
+                TrayRepository.error(error.message ?: TrayRepository.PROTOCOL_MESSAGE)
+        }
+        main.postDelayed(weatherTick, 1000)
+    }
+    private fun syncDevice(state: JSONObject) {
+        val channel = firmware ?: return
+        if (state.optString("connection") != "connected" || !state.optBoolean("protocolReady")) return
+        val frames = FirmwareSettings.frames(state.getJSONObject("preferences"))
+        for ((index, frame) in frames.withIndex()) {
+            val space = index + 1
+            val signature = frame.toString()
+            if (space in pendingConfig || attemptedConfig[space] == signature) continue
+            attemptedConfig[space] = signature; pendingConfig.add(space); configErrors.remove(space)
+            channel.request(frame).whenComplete { _, error ->
+                if (firmware === channel) {
+                    pendingConfig.remove(space)
+                    if (error == null) appliedConfig[space] = signature
+                    else configErrors[space] = error.message ?: "장치 설정 응답을 확인하지 못했어요."
+                    syncDevice(TrayRepository.snapshot())
+                }
+            }
+        }
+        val applied = frames.withIndex().all { appliedConfig[it.index + 1] == it.value.toString() }
+        val status = if (applied) "applied" else if (configErrors.isNotEmpty()) "error" else "pending"
+        val message = when (status) {
+            "applied" -> "저장한 설정을 장치에 적용했어요."
+            "error" -> "휴대폰에는 저장했지만 장치 적용을 확인하지 못했어요. 장치를 다시 연결해 주세요."
+            else -> "저장한 설정을 장치에 적용하고 있어요."
+        }
+        if (state.optJSONObject("configSync")?.optString("status") != status)
+            TrayRepository.patch { it.put("configSync", JSONObject().put("status", status).put("message", message)) }
+        val now = System.currentTimeMillis()
+        val frame = FirmwareWeather.frame(if (WeatherManager.permitted(this) &&
+            state.optJSONObject("weather")?.optString("status") == "ready") WeatherManager.forecast else null, now)
+        val signature = JSONObject(frame.toString()).removeTtlSignature() + ":" + (WeatherManager.forecast?.fetchedAt ?: 0)
+        if (weatherSignature != signature) {
+            weatherSignature = signature
+            channel.request(frame).whenComplete { _, error ->
+                if (firmware === channel) TrayRepository.patch { it.put("weatherSync", if (error == null) "applied" else "error") }
+            }
+        }
+    }
+    private fun JSONObject.removeTtlSignature(): String { remove("ttl_s"); return toString() }
+    fun command(action: String, space: Int): CompletableFuture<FirmwareMessage.Ack> {
+        val state = TrayRepository.snapshot()
+        val channel = checkNotNull(firmware) { "장치를 연결한 뒤 다시 시도해 주세요." }
+        check(state.optString("connection") == "connected" && state.optBoolean("protocolReady")) { "최신 센서 데이터를 먼저 확인해 주세요." }
+        check(action in setOf("start_steril", "stop_steril", "start_fan", "stop_fan")) { "장치에서 지원하지 않는 명령이에요." }
+        check(space in 1..3 && (!action.endsWith("fan") || space == 3)) { "보관 공간을 확인해 주세요." }
+        check(space !in commandSpaces) { "이 공간의 장치 응답을 기다리고 있어요." }
+        if (action.startsWith("start")) {
+            val now = System.currentTimeMillis()
+            val measured = state.optLong("lastReceived", 0)
+            check(measured > 0 && now - measured in 0..SENSOR_FRESH_MS) { "최신 센서 데이터를 먼저 확인해 주세요." }
+            check(state.optJSONObject("configSync")?.optString("status") == "applied") { "장치 설정 적용을 확인한 뒤 다시 시도해 주세요." }
+            val sensor = if (space == 3) state.getJSONObject("umbrella") else state.getJSONArray("trays").getJSONObject(space - 1)
+            check(sensor.optString("sensor") == "ok" && sensor.optBoolean("present")) { "물건이나 우산을 놓은 뒤 다시 시도해 주세요." }
+            val preferences = state.getJSONObject("preferences")
+            val setting = if (space == 3) preferences.getJSONObject("umbrella") else preferences.getJSONArray("trays").getJSONObject(space - 1)
+            if (action == "start_steril") {
+                check(setting.getJSONObject("effect").getBoolean("enabled")) { "살균을 활성화한 뒤 다시 시도해 주세요." }
+                check(sensor.optLong("effectUntil", 0) <= now) { "이미 살균 중이에요." }
+            } else check(setting.getJSONObject("fan").getInt("duration") > 0 && !sensor.optBoolean("fanActive")) { "팬 설정과 동작 상태를 확인해 주세요." }
+        }
+        val frame = JSONObject().put("type", "cmd").put("space", space).put("action", action)
+        if (action == "start_fan") frame.put("sec", state.getJSONObject("preferences").getJSONObject("umbrella").getJSONObject("fan").getInt("duration"))
+        commandSpaces.add(space)
+        return channel.request(frame).also { future -> future.whenComplete { _, _ -> if (firmware === channel) commandSpaces.remove(space) } }
+    }
     private val stopScanTask = Runnable { stopScan() }
     private val pairTimeout = Runnable { if (pairing) failConnection("페어링 시간이 초과됐어요. 시스템 Bluetooth 설정에서 페어링을 확인해 주세요.") }
     private val reconnectTask = Runnable { openSocket() }
     private val permissionCheck = object : Runnable {
         override fun run() {
             verifyPermissions()
+            if (wanted && TrayRepository.snapshot().optString("connection") == "connected" &&
+                SystemClock.elapsedRealtime() - lastSensorElapsed >= 15_000) {
+                // A reboot can reset btPeerActive while HC-06 keeps RFCOMM connected.
+                // Cancel old commands, then wake snapshots with get_state; never replay a start.
+                beginDeviceSession(); updateNotice("HC-06 연결됨 · 센서 수신 대기")
+            }
             if (!destroyed && (wanted || scanning)) main.postDelayed(this, 5000)
         }
     }
@@ -141,6 +262,7 @@ class SmartTrayBluetoothService : Service() {
         getSharedPreferences("ble_connection", MODE_PRIVATE).edit().remove("wanted_address").apply()
         session = RfcommSession({ target -> AndroidSerialSocket(checkNotNull(adapter).getRemoteDevice(target)) }, Executor { main.post(it) })
         TrayRepository.observe(reminderObserver)
+        TrayRepository.observe(deviceObserver)
         val filter = IntentFilter().apply {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED); addAction(BluetoothAdapter.ACTION_DISCOVERY_STARTED)
             addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED); addAction(BluetoothDevice.ACTION_FOUND)
@@ -174,7 +296,7 @@ class SmartTrayBluetoothService : Service() {
                 main.removeCallbacks(reminderTick); doorWatch.reset(); umbrellaPolicy.reset(); releaseDoorWakeLock()
             }
             remindersStopped = false; finishAfterDoorCheck = false
-            stopScan(); session.stop(); epoch++; main.removeCallbacks(reconnectTask); main.removeCallbacks(pairTimeout)
+            stopScan(); clearFirmware(); session.stop(); epoch++; main.removeCallbacks(reconnectTask); main.removeCallbacks(pairTimeout)
             address = target; wanted = true; pairing = false; watchPermissions()
             retry = ReconnectPolicy(if (restored) disk.getInt("retry_count", 0) else 0)
             check(disk.edit().putString("wanted_address", target).putInt("retry_count", retry.attempts).commit()) { "연결 의도를 저장하지 못했어요. 다시 시도해 주세요." }
@@ -261,28 +383,41 @@ class SmartTrayBluetoothService : Service() {
         phase("connecting", if (retry.attempts > 0) "HC-06에 다시 연결하고 있어요 (${retry.attempts}회차)." else "")
         updateNotice(if (retry.attempts > 0) "HC-06 재연결 중 · ${retry.attempts}회차" else "HC-06 RFCOMM 연결 중")
         val token = ++epoch
-        val protocol: FirmwareProtocol = PendingFirmwareProtocol() // New framing state for every socket.
+        clearFirmware()
+        val protocol = ArduinoJsonProtocol() // New framing and sequence state for every socket.
         var total = 0L; var lastPublished = 0L
         session.connect(address!!, object : RfcommSession.Listener {
             override fun connected() {
                 if (!wanted || token != epoch) return
                 retry.reset(); disk.edit().putInt("retry_count", 0).apply()
-                TrayRepository.patch { it.put("protocolReady", protocol.ready).put("protocolMessage", if (protocol.ready) "" else TrayRepository.PROTOCOL_MESSAGE) }
-                phase("connected"); updateNotice("HC-06 연결됨 · " + if (protocol.ready) "센서 수신 대기" else "센서 규격 확인 대기")
+                TrayRepository.patch { it.put("protocolReady", false).put("protocolMessage", TrayRepository.PROTOCOL_MESSAGE) }
+                phase("connected"); updateNotice("HC-06 연결됨 · 센서 수신 대기")
+                beginDeviceSession()
             }
             override fun bytes(chunk: ByteArray) {
                 // Executed on the sole I/O worker; feed must preserve partial frames across reads.
-                val readings = try { protocol.feed(chunk) } catch (_: Exception) {
-                    protocol.reset(); main.post { if (wanted && token == epoch) TrayRepository.error("센서 데이터 형식을 확인해 주세요.") }; emptyList()
-                }
+                val messages = protocol.feedMessages(chunk)
                 total += chunk.size
                 val now = System.currentTimeMillis(); val publishBytes = now - lastPublished >= 1000
                 if (publishBytes) lastPublished = now
                 val count = total
-                if (publishBytes || readings.isNotEmpty()) main.post {
+                if (publishBytes || messages.isNotEmpty()) main.post {
                     if (wanted && token == epoch) {
                         if (publishBytes) TrayRepository.patch { it.put("transportBytesReceived", count).put("lastTransportReceived", now) }
-                        readings.forEach { TrayRepository.accept(it)?.let(notices::post) }
+                        messages.forEach { message -> when (message) {
+                            is FirmwareMessage.Ack -> firmware?.ack(message)
+                            is FirmwareMessage.State -> {
+                                if (firmwareBoot != null && firmwareBoot != message.reading.boot) {
+                                    clearFirmware(); firmware = newChannel(); umbrellaPolicy.reset()
+                                    main.postDelayed(weatherTick, 1000)
+                                }
+                                firmwareBoot = message.reading.boot
+                                lastSensorElapsed = SystemClock.elapsedRealtime()
+                                TrayRepository.accept(message.reading)?.let(notices::post)
+                                updateNotice("HC-06 연결됨 · 센서 수신 중")
+                                firmware?.stateReceived()
+                            }
+                        } }
                     }
                 }
             }
@@ -299,6 +434,7 @@ class SmartTrayBluetoothService : Service() {
         })
     }
     private fun scheduleReconnect(reason: String) {
+        clearFirmware(); umbrellaPolicy.reset()
         val delay = retry.nextDelay()
         if (!disk.edit().putInt("retry_count", retry.attempts).commit()) { failConnection("연결 복구 상태를 저장하지 못했어요. 다시 연결해 주세요."); return }
         phase("retrying", "$reason ${delay / 1000}초 후 다시 시도해요 (${retry.attempts}회차).")
@@ -306,6 +442,8 @@ class SmartTrayBluetoothService : Service() {
         main.removeCallbacks(reconnectTask); main.postDelayed(reconnectTask, delay)
     }
     private fun updateNotice(text: String) {
+        if (noticeText == text) return
+        noticeText = text
         try { getSystemService(android.app.NotificationManager::class.java).notify(TrayNotifications.SERVICE_ID, notices.connection(text)) }
         catch (_: SecurityException) { }
     }
@@ -320,7 +458,7 @@ class SmartTrayBluetoothService : Service() {
         if (!keep) { doorWatch.reset(); releaseDoorWakeLock() }
         wanted = false; pairing = false; epoch++; main.removeCallbacks(permissionCheck)
         main.removeCallbacks(reconnectTask); main.removeCallbacks(pairTimeout)
-        stopScan(); session.stop()
+        stopScan(); clearFirmware(); session.stop()
         val cleared = disk.edit().clear().commit()
         TrayRepository.patch { it.put("protocolReady", false).put("connectionPhase", "idle").put("retryAttempt", 0) }
         TrayRepository.connection("disconnected", if (cleared) message else "연결은 해제됐지만 저장소를 정리하지 못했어요. 앱 설정을 확인해 주세요.")
@@ -337,6 +475,8 @@ class SmartTrayBluetoothService : Service() {
     override fun onDestroy() {
         destroyed = true; wanted = false; epoch++; pairing = false
         TrayRepository.removeObserver(reminderObserver)
+        TrayRepository.removeObserver(deviceObserver)
+        clearFirmware()
         main.removeCallbacksAndMessages(null); stopScan(); session.close()
         releaseDoorWakeLock(); doorWatch.reset(); umbrellaPolicy.reset()
         unregisterReceiver(bluetoothEvents)
